@@ -1,3 +1,4 @@
+#define ALLOW_DOUBLE_MATH_FUNCTIONS
 #include "AP_Mount_Backend.h"
 #if HAL_MOUNT_ENABLED
 #include <AP_AHRS/AP_AHRS.h>
@@ -160,6 +161,17 @@ bool AP_Mount_Backend::calc_angle_to_roi_target(Vector3f& angles_to_target_rad,
     return calc_angle_to_location(_state._roi_target, angles_to_target_rad, calc_tilt, calc_pan, relative_pan);
 }
 
+bool AP_Mount_Backend::calc_angle_to_roi_target_d(Vector3d& angles_to_target_rad,
+                                                bool calc_tilt,
+                                                bool calc_pan,
+                                                bool relative_pan) const
+{
+    if (!_state._roi_target_set) {
+        return false;
+    }
+    return calc_angle_to_location_d(_state._roi_target, angles_to_target_rad, calc_tilt, calc_pan, relative_pan);
+}
+
 bool AP_Mount_Backend::calc_angle_to_sysid_target(Vector3f& angles_to_target_rad,
                                                   bool calc_tilt,
                                                   bool calc_pan,
@@ -178,6 +190,24 @@ bool AP_Mount_Backend::calc_angle_to_sysid_target(Vector3f& angles_to_target_rad
                                   relative_pan);
 }
 
+bool AP_Mount_Backend::calc_angle_to_sysid_target_d(Vector3d& angles_to_target_rad,
+                                                  bool calc_tilt,
+                                                  bool calc_pan,
+                                                  bool relative_pan) const
+{
+    if (!_state._target_sysid_location_set) {
+        return false;
+    }
+    if (!_state._target_sysid) {
+        return false;
+    }
+    return calc_angle_to_location_d(_state._target_sysid_location,
+                                  angles_to_target_rad,
+                                  calc_tilt,
+                                  calc_pan,
+                                  relative_pan);
+}
+
 // calc_angle_to_location - calculates the earth-frame roll, tilt and pan angles (and radians) to point at the given target
 bool AP_Mount_Backend::calc_angle_to_location(const struct Location &target, Vector3f& angles_to_target_rad, bool calc_tilt, bool calc_pan, bool relative_pan) const
 {
@@ -185,8 +215,17 @@ bool AP_Mount_Backend::calc_angle_to_location(const struct Location &target, Vec
     if (!AP::ahrs().get_position(current_loc)) {
         return false;
     }
-    const float GPS_vector_x = Location::diff_longitude(target.lng,current_loc.lng)*cosf(ToRad((current_loc.lat+target.lat)*0.00000005f))*0.01113195f;
-    const float GPS_vector_y = (target.lat-current_loc.lat)*0.01113195f;
+
+    // Haversine formula
+    float curr_lat = current_loc.lat*1.0e-7*M_PI/180.0;
+    float tar_lat = target.lat*1.0e-7*M_PI/180.0;
+    float delta_lat = tar_lat - curr_lat;
+    float delta_lng = Location::diff_longitude(target.lng,current_loc.lng)*1.0e-7*M_PI/180.0;
+    float a = sinf(delta_lat/2)*sinf(delta_lat/2) + cosf(curr_lat)*cosf(tar_lat)*sinf(delta_lng/2)*sinf(delta_lng/2);
+    float target_distance = 2*RADIUS_OF_EARTH*atan2f(sqrt(a),sqrtf(1-a))*100.0; // in cm
+    float y = sinf(delta_lng)*cosf(tar_lat);
+    float x = cosf(curr_lat)*sinf(tar_lat) - sinf(curr_lat)*cosf(tar_lat)*cosf(delta_lng);
+
     int32_t target_alt_cm = 0;
     if (!target.get_alt_cm(Location::AltFrame::ABOVE_HOME, target_alt_cm)) {
         return false;
@@ -195,25 +234,103 @@ bool AP_Mount_Backend::calc_angle_to_location(const struct Location &target, Vec
     if (!current_loc.get_alt_cm(Location::AltFrame::ABOVE_HOME, current_alt_cm)) {
         return false;
     }
-    float GPS_vector_z = target_alt_cm - current_alt_cm;
-    float target_distance = 100.0f*norm(GPS_vector_x, GPS_vector_y);      // Careful , centimeters here locally. Baro/alt is in cm, lat/lon is in meters.
+
+    float z = target_alt_cm - current_alt_cm;
 
     // initialise all angles to zero
     angles_to_target_rad.zero();
 
     // tilt calcs
     if (calc_tilt) {
-        angles_to_target_rad.y = atan2f(GPS_vector_z, target_distance);
+        angles_to_target_rad.y = atan2f(z, target_distance);
     }
 
     // pan calcs
     if (calc_pan) {
         // calc absolute heading and then onvert to vehicle relative yaw
-        angles_to_target_rad.z = atan2f(GPS_vector_x, GPS_vector_y);
+        angles_to_target_rad.z = atan2f(y, x);
         if (relative_pan) {
             angles_to_target_rad.z = wrap_PI(angles_to_target_rad.z - AP::ahrs().yaw);
         }
     }
+    return true;
+}
+
+// calc_angle_to_location - calculates the earth-frame roll, tilt and pan angles (and radians) to point at the given target
+bool AP_Mount_Backend::calc_angle_to_location_d(const struct Location &target, Vector3d& angles_to_target_rad, bool calc_tilt, bool calc_pan, bool relative_pan) const
+{
+    Location current_loc;
+    if (!AP::ahrs().get_position(current_loc)) {
+        return false;
+    }
+
+    // Haversine formula
+    double curr_lat = current_loc.lat*1.0e-7*M_PI/180.0;
+    double tar_lat = target.lat*1.0e-7*M_PI/180.0;
+    double delta_lat = tar_lat - curr_lat;
+    double delta_lng = Location::diff_longitude(target.lng,current_loc.lng)*1.0e-7*M_PI/180.0;
+    double a = sin(delta_lat/2)*sin(delta_lat/2) + cos(curr_lat)*cos(tar_lat)*sin(delta_lng/2)*sin(delta_lng/2);\
+
+    // Compute distance to target
+    double target_distance = 2*RADIUS_OF_EARTH*atan2(sqrt(a),sqrt(1-a))*100.0; // in cm
+
+    // Compute bearing to target
+    double y = sin(delta_lng)*cos(tar_lat);
+    double x = cos(curr_lat)*sin(tar_lat) - sin(curr_lat)*cos(tar_lat)*cos(delta_lng);
+    double bearing = atan2(y, x);
+
+    double fixed_yaw = (double)_state._roll_stb_lead*DEG_TO_RAD;
+    double ang_diff = wrap_2PI(bearing - fixed_yaw);
+
+    int32_t target_alt_cm = 0;
+    if (!target.get_alt_cm(Location::AltFrame::ABOVE_HOME, target_alt_cm)) {
+        return false;
+    }
+    int32_t current_alt_cm = 0;
+    if (!current_loc.get_alt_cm(Location::AltFrame::ABOVE_HOME, current_alt_cm)) {
+        return false;
+    }
+
+    // Compute height difference
+    double z = target_alt_cm - current_alt_cm;
+
+    //Compute distance and slope wrt target
+    float horzdist2target = current_loc.get_distance(target);
+    float dist2target = sqrtf(horzdist2target*horzdist2target + (float)z*z/10000.0f);
+    float slope = fabsf((float)z/(100.0f*horzdist2target));
+
+    // initialise all angles to zero
+    angles_to_target_rad.zero();
+
+    if(dist2target > 10){
+        if(_state._pitch_stb_lead < 0.5f || slope < 0.5f){
+                // tilt calcs
+                angles_to_target_rad.y = atan2(z, target_distance);
+
+                // roll is leveled to the ground
+
+                // pan calcs
+                angles_to_target_rad.z = bearing;
+                if (relative_pan) {
+                    // Convert to vehicle relative yaw
+                    angles_to_target_rad.z = wrap_180((angles_to_target_rad.z - (double)AP::ahrs().yaw)*RAD_TO_DEG)*DEG_TO_RAD;
+                }
+            }
+        else {
+                // tilt calcs
+                angles_to_target_rad.y = atan2(z, target_distance*cos(ang_diff));
+                
+                // roll calcs
+                angles_to_target_rad.x = atan2(z, target_distance*sin(ang_diff)) + M_PI_2;
+
+                // pan is set to a fixed value defined by user
+                angles_to_target_rad.z = fixed_yaw;
+                if (relative_pan) {
+                    angles_to_target_rad.z = wrap_180((angles_to_target_rad.z - (double)AP::ahrs().yaw)*RAD_TO_DEG)*DEG_TO_RAD;
+                }
+            }
+    }
+
     return true;
 }
 
