@@ -1,5 +1,65 @@
 #include "Copter.h"
 
+void Copter::init_CASS_imet(){
+
+    float coeff[4][4];
+
+    //CS3D SENSORS (dummy values)
+    //IMET temp number 57560:
+    coeff[0][0] = 9.98873354e-04f;
+    coeff[0][1] = 2.63219974e-04f;
+    coeff[0][2] = 0.0f;
+    coeff[0][3] = 1.47120693e-07f;
+
+    //IMET temp number 57551:
+    coeff[1][0] = 1.02017189e-03f;
+    coeff[1][1] = 2.60496203e-04f;
+    coeff[1][2] = 0.0f;
+    coeff[1][3] = 1.52569843e-07f;
+
+    //IMET temp number 57558:
+    coeff[2][0] = 1.01048989e-03f;
+    coeff[2][1] = 2.62050421e-04f;
+    coeff[2][2] = 0.0f;
+    coeff[2][3] = 1.48891207e-07f;
+
+    //IMET temp number none:
+    coeff[3][0] = 1.0f;
+    coeff[3][1] = 1.0f;
+    coeff[3][2] = 0.0f;
+    coeff[3][3] = 1.0f;
+    
+    // Initialize and set I2C addresses
+    uint8_t deafult_i2cAddr = 0x48;
+    uint8_t busId = 0;
+    for(uint8_t i=0; i<4; i++){
+        CASS_Imet[i].init(busId,deafult_i2cAddr + i);
+    }
+    // Set sensor coefficients
+    CASS_Imet[0].set_sensor_coeff(coeff[0]);
+    CASS_Imet[1].set_sensor_coeff(coeff[1]);
+    CASS_Imet[2].set_sensor_coeff(coeff[2]);
+    CASS_Imet[3].set_sensor_coeff(coeff[3]);
+}
+
+void Copter::init_CASS_hyt271(){
+    // Initialize and set I2C addresses
+    uint8_t deafult_i2cAddr = 0x10;
+    uint8_t busId = 0;
+    for(uint8_t i=0; i<4; i++){
+        CASS_HYT271[i].init(busId,deafult_i2cAddr + i);
+    }
+}
+
+void Copter::init_ARRC_lb5900(){
+    // Initialize and set I2C addresses
+    uint8_t i2cAddr = g2.user_parameters.get_lb5900_address();
+    uint16_t freq = g2.user_parameters.get_lb5900_freq();
+    uint8_t avg_cnt = g2.user_parameters.get_lb5900_avg_cnt();
+    uint8_t busId = 0;
+    ARRC_LB5900.init(busId,i2cAddr,freq,avg_cnt);
+}
+
 // return barometric altitude in centimeters
 void Copter::read_barometer(void)
 {
@@ -118,8 +178,56 @@ void Copter::read_rangefinder(void)
 }
 
 // return true if rangefinder_alt can be used
+bool print_flag = true;
+
 bool Copter::rangefinder_alt_ok() const
 {
+    Location curr_loc;
+    int32_t curr_alt_cm;
+
+    // Get altitude wrt home
+    if(!copter.ahrs.get_position(curr_loc)){
+        return (rangefinder_state.enabled && rangefinder_state.alt_healthy);
+    }
+
+    if(!curr_loc.get_alt_cm(Location::AltFrame::ABOVE_HOME, curr_alt_cm)){
+        return (rangefinder_state.enabled && rangefinder_state.alt_healthy);
+    }
+
+    // Get humidity
+    float avg_hum = 0;
+    float N = 0;
+    for(int8_t i = 0; i < 4; i++){
+        if(copter.CASS_HYT271[i].healthy()){
+            avg_hum += copter.CASS_HYT271[i].relative_humidity();
+            N++;
+        }
+    }
+    if(N > 0){
+        avg_hum /= N;
+    }
+    else{
+        avg_hum = 0;
+    }
+
+    if(g2.user_parameters.get_gpslidar_alt() < 1.0f && g2.user_parameters.get_gpslidar_hum() < 1.0f){
+        return (rangefinder_state.enabled && rangefinder_state.alt_healthy);
+    }
+    else if(curr_alt_cm > g2.user_parameters.get_gpslidar_alt()*100.0f || avg_hum > g2.user_parameters.get_gpslidar_hum()){
+        copter.rangefinder_state.alt_healthy = false;
+        if (avg_hum > g2.user_parameters.get_gpslidar_hum() && print_flag == false){
+            copter.gcs().send_text(MAV_SEVERITY_WARNING, "High humidity: Lidar disabled");
+            print_flag = true;
+        }
+    }
+    else{
+        copter.rangefinder_state.alt_healthy = true;
+        if (print_flag == true){
+            copter.gcs().send_text(MAV_SEVERITY_INFO, "Lidar enabled");
+            print_flag = false;
+        }
+    }
+
     return (rangefinder_state.enabled && rangefinder_state.alt_healthy);
 }
 

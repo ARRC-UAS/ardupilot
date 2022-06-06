@@ -555,6 +555,17 @@ const struct LogStructure Copter::log_structure[] = {
 
     { LOG_GUIDEDTARGET_MSG, sizeof(log_GuidedTarget),
       "GUID",  "QBfffbffffff",    "TimeUS,Type,pX,pY,pZ,Terrain,vX,vY,vZ,aX,aY,aZ", "s-mmm-nnnooo", "F-BBB-BBBBBB" },
+
+    //CASS Data Logging format for the SD card, 
+    { LOG_IMET_MSG, sizeof(log_IMET),
+      "IMET", "QBBBBBffffffff","TimeUS,Fan,Hth1,Hth2,Hth3,Hth4,T1,T2,T3,T4,R1,R2,R3,R4","s-------------","F0000000000000"},
+    { LOG_RH_MSG, sizeof(log_RH),
+      "RHUM", "QBBBBffffffff","TimeUS,Hth1,Hth2,Hth3,Hth4,H1,H2,H3,H4,T1,T2,T3,T4","s------------","F000000000000"},
+    { LOG_WIND_MSG, sizeof(log_WIND),
+      "WIND", "Qfffff","TimeUS,wdir,wspeed,R13,R23,R33","s-----","F00000"},
+    //ARRC LB5900 data logging  
+    { LOG_LB5900_MSG, sizeof(log_LB5900),
+      "LB59", "QBf","TimeUS,Hth,Pwr","s--","F00"},
 };
 
 void Copter::Log_Write_Vehicle_Startup_Messages()

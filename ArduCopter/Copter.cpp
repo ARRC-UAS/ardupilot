@@ -150,7 +150,7 @@ const AP_Scheduler::Task Copter::scheduler_tasks[] = {
     SCHED_TASK_CLASS(GCS,                  (GCS*)&copter._gcs,          update_receive, 400, 180),
     SCHED_TASK_CLASS(GCS,                  (GCS*)&copter._gcs,          update_send,    400, 550),
 #if HAL_MOUNT_ENABLED
-    SCHED_TASK_CLASS(AP_Mount,             &copter.camera_mount,        update,          50,  75),
+    SCHED_TASK_CLASS(AP_Mount,             &copter.camera_mount,        update,          250,  75),
 #endif
 #if CAMERA == ENABLED
     SCHED_TASK_CLASS(AP_Camera,            &copter.camera,              update,          50,  75),
@@ -185,19 +185,22 @@ const AP_Scheduler::Task Copter::scheduler_tasks[] = {
     SCHED_TASK_CLASS(AP_Winch,             &copter.g2.winch,            update,          50,  50),
 #endif
 #ifdef USERHOOK_FASTLOOP
-    SCHED_TASK(userhook_FastLoop,    100,     75),
+    SCHED_TASK(userhook_FastLoop,    1,     75),
 #endif
-#ifdef USERHOOK_50HZLOOP
-    SCHED_TASK(userhook_50Hz,         50,     75),
+#ifdef USER_VPBATT_MNTR_LOOP
+    SCHED_TASK(user_vpbatt_monitor,         10,     75),
 #endif
-#ifdef USERHOOK_MEDIUMLOOP
-    SCHED_TASK(userhook_MediumLoop,   10,     75),
+#ifdef USER_TEMPERATURE_LOOP
+    SCHED_TASK(user_temperature_logger,   10,     75),
 #endif
-#ifdef USERHOOK_SLOWLOOP
-    SCHED_TASK(userhook_SlowLoop,     3.3,    75),
+#ifdef USER_ARRCLB5900_LOOP
+    SCHED_TASK(user_LB5900_logger,   10,     75),
 #endif
-#ifdef USERHOOK_SUPERSLOWLOOP
-    SCHED_TASK(userhook_SuperSlowLoop, 1,   75),
+#ifdef USER_HUMIDITY_LOOP
+    SCHED_TASK(user_humidity_logger,     10,    75),
+#endif
+#ifdef USER_WIND_LOOP
+    SCHED_TASK(user_wind_vane, 10,   75),
 #endif
 #if BUTTON_ENABLED == ENABLED
     SCHED_TASK_CLASS(AP_Button,            &copter.button,           update,           5, 100),

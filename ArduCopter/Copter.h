@@ -69,6 +69,13 @@
 #include <AP_ADSB/AP_ADSB.h>                // ADS-B RF based collision avoidance module library
 #include <AP_Proximity/AP_Proximity.h>      // ArduPilot proximity sensor library
 
+// CASS libraries declaration
+#include <AC_CASS_IMET/AC_CASS_Imet.h>
+#include <AC_CASS_HYT271/AC_CASS_HYT271.h>
+
+// ARRC libraries declaration
+#include <AP_ARRC_LB5900/AP_ARRC_LB5900.h>
+
 // Configuration
 #include "defines.h"
 #include "config.h"
@@ -246,6 +253,14 @@ private:
     // flight modes convenience array
     AP_Int8 *flight_modes;
     const uint8_t num_flight_modes = 6;
+
+    // Imet Temperature sensors class declaration
+    AC_CASS_Imet CASS_Imet[4]; 
+    // HYT271 humidity sensors class declaration
+    AC_CASS_HYT271 CASS_HYT271[4];
+
+    // LB5900 sensor class declaration
+    AP_ARRC_LB5900 ARRC_LB5900;
 
     struct RangeFinderState {
         bool enabled:1;
@@ -898,13 +913,28 @@ private:
     // UserCode.cpp
     void userhook_init();
     void userhook_FastLoop();
-    void userhook_50Hz();
-    void userhook_MediumLoop();
-    void userhook_SlowLoop();
-    void userhook_SuperSlowLoop();
-    void userhook_auxSwitch1(uint8_t ch_flag);
-    void userhook_auxSwitch2(uint8_t ch_flag);
-    void userhook_auxSwitch3(uint8_t ch_flag);
+    void user_vpbatt_monitor();
+    void user_temperature_logger();
+    void user_LB5900_logger();
+    void user_humidity_logger();
+    void user_wind_vane();
+    void userhook_auxSwitch1();
+    void userhook_auxSwitch2();
+    void userhook_auxSwitch3();
+
+    // CASS Mavlink message
+    void send_cass_imet(mavlink_channel_t chan);
+    void send_cass_hyt271(mavlink_channel_t chan);
+
+    //ARRC Mavlink message
+    void send_arrc_lb5900(mavlink_channel_t chan);
+
+    // CASS Libraries sensor code initializer
+    void init_CASS_imet(void);
+    void init_CASS_hyt271(void);
+
+    //ARRC Libraries sensor code initializer
+    void init_ARRC_lb5900(void);
 
     // vehicle specific waypoint info helpers
     bool get_wp_distance_m(float &distance) const override;

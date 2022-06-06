@@ -55,12 +55,20 @@
 #define AP_MOUNT_ALEXMOS_MODE_ANGLE 2
 #define AP_MOUNT_ALEXMOS_MODE_SPEED_ANGLE 3
 #define AP_MOUNT_ALEXMOS_MODE_RC 4
+#define AP_MOUNT_ALEXMOS_MODE_ANGLE_REL_FRAME 5
+#define AP_MOUNT_ALEXMOS_MODE_ANGLE_FLAG_AUTO_TASK 66
+#define AP_MOUNT_ALEXMOS_MODE_ANGLE_REL_FRAME_FLAG_AUTO_TASK 69
 
-#define AP_MOUNT_ALEXMOS_SPEED 30 // degree/s2
+
+#define AP_MOUNT_ALEXMOS_SPEED 40 // degree/s2
 
 #define VALUE_TO_DEGREE(d) ((float)((d * 720) >> 15))
 #define DEGREE_TO_VALUE(d) ((int16_t)((float)(d)*(1.0f/0.02197265625f)))
 #define DEGREE_PER_SEC_TO_VALUE(d) ((int16_t)((float)(d)*(1.0f/0.1220740379f)))
+
+#define VALUE_TO_DEGREE_D(d) ((double)((d * 720) >> 15))
+#define DEGREE_TO_VALUE_D(d) ((int16_t)((double)(d)*(1.0f/0.02197265625f)))
+#define DEGREE_PER_SEC_TO_VALUE_D(d) ((int16_t)((double)(d)*(1.0f/0.1220740379f)))
 
 class AP_Mount_Alexmos : public AP_Mount_Backend
 {
@@ -98,6 +106,9 @@ private:
 
     // control_axis - send new angles to the gimbal at a fixed speed of 30 deg/s
     void control_axis(const Vector3f& angle , bool targets_in_degrees);
+
+    // (double)control_axis - send new angles to the gimbal at a fixed speed of 30 deg/s
+    void control_axis_d(const Vector3d& angle , bool targets_in_degrees);
 
     // read_params - read current profile profile_id and global parameters from the gimbal settings
     void read_params(uint8_t profile_id);
@@ -142,7 +153,9 @@ private:
 
     // CMD_CONTROL
     struct PACKED alexmos_angles_speed {
-        int8_t mode;
+        int8_t mode_roll;
+        int8_t mode_pitch;
+        int8_t mode_yaw;
         int16_t speed_roll;
         int16_t angle_roll;
         int16_t speed_pitch;
