@@ -33,6 +33,14 @@ const AP_Param::GroupInfo UserParameters::var_info[] = {
     AP_GROUPINFO("_VPBATT_WH", 17, UserParameters, vpbatt_wh, 89.0f),
     // Mission Auto-generator
     AP_GROUPINFO("_AUTOVP_ALT", 18, UserParameters, autovp_max_altitude, 120.0f),
+    // GPS-based Lidar activation
+    AP_GROUPINFO("_LIDAR_ALT", 19, UserParameters, gpslidar_alt, 80.0f),
+    AP_GROUPINFO("_LIDAR_HUM", 20, UserParameters, gpslidar_hum, 90.0f),
+    // ARRC LB5900 params
+    AP_GROUPINFO("_LB_ADDR", 21, UserParameters, lb5900_addr, 76),
+    AP_GROUPINFO("_LB_FREQ", 22, UserParameters, lb5900_freq, 3000),
+    AP_GROUPINFO("_LB_AVG_CNT", 23, UserParameters, lb5900_avg_cnt, 10),
+    AP_GROUPINFO("_LB_RATE", 24, UserParameters, lb5900_mrate, 1),
     
     AP_GROUPEND
 };

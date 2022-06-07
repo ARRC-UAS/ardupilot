@@ -256,29 +256,6 @@ void Copter::send_cass_imet(mavlink_channel_t chan) {
         0,
         size,
         raw_sensor);
-
-    // Send resistance measurements packet from the IMET sensor if there is still space
-    if(!HAVE_PAYLOAD_SPACE(chan, CASS_SENSOR_RAW)){
-        return;
-    }
-    #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-        // Variables simulation for IMET resistance measurements
-        for(uint8_t i=0; i<4; i++){
-            raw_sensor[i] = -356.9892f*raw_sensor[i] + 110935.3763f;
-        }
-        //printf("HYT271 temp: %5.2f \n",raw_sensor[0]);  
-    #else
-        for(uint8_t i=0; i<4; i++){
-            raw_sensor[i] = copter.CASS_Imet[i].resistance();
-        }
-    #endif
-    // Call Mavlink function and send CASS data
-    mavlink_msg_cass_sensor_raw_send(
-        chan,
-        AP_HAL::millis(),
-        2,
-        size,
-        raw_sensor);
 }
 
 void Copter::send_cass_hyt271(mavlink_channel_t chan) {
@@ -314,6 +291,32 @@ void Copter::send_cass_hyt271(mavlink_channel_t chan) {
         chan,
         AP_HAL::millis(),
         1,
+        size,
+        raw_sensor);
+}
+
+void Copter::send_arrc_lb5900(mavlink_channel_t chan) {
+    //mavlink_cass_sensor_raw_t packet;
+    float raw_sensor[5];
+    uint8_t size = 5;
+    memset(raw_sensor, 0, size * sizeof(float));
+
+    // Send LB5900 power dBm
+    raw_sensor[0] = copter.ARRC_LB5900.healthy();
+    raw_sensor[1] = copter.ARRC_LB5900.power_measure();
+
+    #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+        // Variables simulation for HYT271 humidity sensors
+        uint32_t m = AP_HAL::millis();
+        raw_sensor[0] = sinf(0.001f*float(m));
+        //printf("LB5900 power (dBm): %5.2f \n",raw_sensor[0]);     
+    #endif
+
+    // Call Mavlink function and send CASS data
+    mavlink_msg_cass_sensor_raw_send(
+        chan,
+        AP_HAL::millis(),
+        2,
         size,
         raw_sensor);
 }
@@ -445,6 +448,11 @@ bool GCS_MAVLINK_Copter::try_send_message(enum ap_message id)
     case MSG_CASS_HYT271:
         CHECK_PAYLOAD_SIZE(CASS_SENSOR_RAW);
         copter.send_cass_hyt271(chan);
+        break;
+
+    case MSG_ARRC_LB5900:
+        CHECK_PAYLOAD_SIZE(CASS_SENSOR_RAW);
+        copter.send_arrc_lb5900(chan);
         break;
 
     default:
@@ -610,8 +618,9 @@ static const ap_message STREAM_EXTRA3_msgs[] = {
     MSG_ESC_TELEMETRY,
     MSG_GENERATOR_STATUS,
     MSG_WINCH_STATUS,
-    MSG_CASS_IMET,
-    MSG_CASS_HYT271
+    //MSG_CASS_IMET,
+    //MSG_CASS_HYT271,
+    MSG_ARRC_LB5900
 };
 static const ap_message STREAM_PARAMS_msgs[] = {
     MSG_NEXT_PARAM

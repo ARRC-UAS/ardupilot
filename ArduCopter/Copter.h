@@ -73,6 +73,9 @@
 #include <AC_CASS_IMET/AC_CASS_Imet.h>
 #include <AC_CASS_HYT271/AC_CASS_HYT271.h>
 
+// ARRC libraries declaration
+#include <AP_ARRC_LB5900/AP_ARRC_LB5900.h>
+
 // Configuration
 #include "defines.h"
 #include "config.h"
@@ -255,6 +258,9 @@ private:
     AC_CASS_Imet CASS_Imet[4]; 
     // HYT271 humidity sensors class declaration
     AC_CASS_HYT271 CASS_HYT271[4];
+
+    // LB5900 sensor class declaration
+    AP_ARRC_LB5900 ARRC_LB5900;
 
     struct RangeFinderState {
         bool enabled:1;
@@ -909,6 +915,7 @@ private:
     void userhook_FastLoop();
     void user_vpbatt_monitor();
     void user_temperature_logger();
+    void user_LB5900_logger();
     void user_humidity_logger();
     void user_wind_vane();
     void userhook_auxSwitch1();
@@ -919,9 +926,15 @@ private:
     void send_cass_imet(mavlink_channel_t chan);
     void send_cass_hyt271(mavlink_channel_t chan);
 
-    // CASS Libraries sensor code initilizer
+    //ARRC Mavlink message
+    void send_arrc_lb5900(mavlink_channel_t chan);
+
+    // CASS Libraries sensor code initializer
     void init_CASS_imet(void);
     void init_CASS_hyt271(void);
+
+    //ARRC Libraries sensor code initializer
+    void init_ARRC_lb5900(void);
 
     // vehicle specific waypoint info helpers
     bool get_wp_distance_m(float &distance) const override;

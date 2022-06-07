@@ -51,6 +51,16 @@ void Copter::init_CASS_hyt271(){
     }
 }
 
+void Copter::init_ARRC_lb5900(){
+    // Initialize and set I2C addresses
+    uint8_t i2cAddr = g2.user_parameters.get_lb5900_address();
+    uint16_t freq = g2.user_parameters.get_lb5900_freq();
+    uint8_t avg_cnt = g2.user_parameters.get_lb5900_avg_cnt();
+    uint8_t rate = g2.user_parameters.get_lb5900_mrate();
+    uint8_t busId = 0;
+    ARRC_LB5900.init(busId,i2cAddr,freq,avg_cnt,rate);
+}
+
 // return barometric altitude in centimeters
 void Copter::read_barometer(void)
 {
@@ -169,8 +179,56 @@ void Copter::read_rangefinder(void)
 }
 
 // return true if rangefinder_alt can be used
+bool print_flag = true;
+
 bool Copter::rangefinder_alt_ok() const
 {
+    Location curr_loc;
+    int32_t curr_alt_cm;
+
+    // Get altitude wrt home
+    if(!copter.ahrs.get_position(curr_loc)){
+        return (rangefinder_state.enabled && rangefinder_state.alt_healthy);
+    }
+
+    if(!curr_loc.get_alt_cm(Location::AltFrame::ABOVE_HOME, curr_alt_cm)){
+        return (rangefinder_state.enabled && rangefinder_state.alt_healthy);
+    }
+
+    // Get humidity
+    float avg_hum = 0;
+    float N = 0;
+    for(int8_t i = 0; i < 4; i++){
+        if(copter.CASS_HYT271[i].healthy()){
+            avg_hum += copter.CASS_HYT271[i].relative_humidity();
+            N++;
+        }
+    }
+    if(N > 0){
+        avg_hum /= N;
+    }
+    else{
+        avg_hum = 0;
+    }
+
+    if(g2.user_parameters.get_gpslidar_alt() < 1.0f && g2.user_parameters.get_gpslidar_hum() < 1.0f){
+        return (rangefinder_state.enabled && rangefinder_state.alt_healthy);
+    }
+    else if(curr_alt_cm > g2.user_parameters.get_gpslidar_alt()*100.0f || avg_hum > g2.user_parameters.get_gpslidar_hum()){
+        copter.rangefinder_state.alt_healthy = false;
+        if (avg_hum > g2.user_parameters.get_gpslidar_hum() && print_flag == false){
+            copter.gcs().send_text(MAV_SEVERITY_WARNING, "High humidity: Lidar disabled");
+            print_flag = true;
+        }
+    }
+    else{
+        copter.rangefinder_state.alt_healthy = true;
+        if (print_flag == true){
+            copter.gcs().send_text(MAV_SEVERITY_INFO, "Lidar enabled");
+            print_flag = false;
+        }
+    }
+
     return (rangefinder_state.enabled && rangefinder_state.alt_healthy);
 }
 
