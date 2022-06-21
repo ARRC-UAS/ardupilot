@@ -9,12 +9,21 @@ extern const AP_HAL::HAL& hal;
 void AP_Mount_Backend::set_angle_targets(float roll, float tilt, float pan)
 {
     // set angle targets
-    _angle_ef_target_rad.x = radians(roll);
-    _angle_ef_target_rad.y = radians(tilt);
-    _angle_ef_target_rad.z = radians(pan);
+    _angle_ef_target_rad_d.x = radians(roll);
+    _angle_ef_target_rad_d.y = radians(tilt);
+    _angle_ef_target_rad_d.z = radians(pan);
 
     // set the mode to mavlink targeting
     _frontend.set_mode(_instance, MAV_MOUNT_MODE_MAVLINK_TARGETING);
+}
+
+// ARRC set fixed yaw angle after antenna alignment
+void AP_Mount_Backend::set_fixed_yaw_angle(float fixed_yaw)
+{
+    // set angle targets
+    _state._roll_stb_lead = fixed_yaw;
+    // set the mode to mavlink targeting
+    _frontend.set_mode(_instance, MAV_MOUNT_MODE_GPS_POINT);
 }
 
 // set_roi_target - sets target location that mount should attempt to point towards
