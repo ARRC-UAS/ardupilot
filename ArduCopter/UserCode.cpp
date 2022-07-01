@@ -41,10 +41,11 @@ uint32_t LB_now;
 uint32_t gimbal_now;
 bool gimbal_execute;
 uint8_t gimbal_iter;
-const uint8_t gimbal_angle_span = 30;       // Must be an even number
-const uint16_t gimbal_wait = 300;           // Waiting time while gimbal is rotating
-const uint16_t gimbal_sample_time = 700;    // Sampling time at each angle step in milliseconds
-float gimbal_probe_samples[gimbal_angle_span + 1];
+const uint8_t gimbal_angle_span = 40;        // Must be an even number
+const uint8_t gimbal_step = 10;              // Angle steps
+const uint16_t gimbal_wait = 2000;           // Waiting time while gimbal is rotating
+const uint16_t gimbal_sample_time = 1000;    // Sampling time at each angle step in milliseconds
+float gimbal_probe_samples[gimbal_angle_span/gimbal_step + 1];
 uint8_t gimbal_num_samples;
 
 //AutoVP mission generation
@@ -74,7 +75,7 @@ void Copter::userhook_init()
     gimbal_execute = false;
     gimbal_iter = 0;
     gimbal_num_samples = 0;
-    memset(gimbal_probe_samples, 0, (gimbal_angle_span + 1) * sizeof(float));
+    memset(gimbal_probe_samples, 0, (gimbal_angle_span/gimbal_step + 1) * sizeof(float));
 
     //Wind filter initialization
     float Fss;
@@ -162,29 +163,45 @@ void Copter::user_LB5900_logger()
 
 #endif
 
+#ifdef USER_ARRCRFE_LOOP
+void Copter::user_RFE_logger()
+{
+    // Read Power in dBm. Write sensors packet into the SD card
+    // RFExplorer Power Data Logger ///////////////////////////////////////////////////////////////////////////////////////////
+    struct log_RFE pkt_temp = {
+        LOG_PACKET_HEADER_INIT(LOG_RFE_MSG),
+        time_stamp              : copter.ARRC_RFE.get_timestamp(),      //Store time in microseconds
+        freq                    : copter.ARRC_RFE.get_freq(),           //Store sampled frequency in Hz
+        power                   : copter.ARRC_RFE.get_power(),          //Store sampled power in dBm
+    };
+    logger.WriteBlock(&pkt_temp, sizeof(pkt_temp));   //Send package to SD card
+}
+
+#endif
+
 #ifdef USER_GIMBAL_LOOP
 void Copter::user_ARRC_gimbal()
 {
     uint8_t N = gimbal_angle_span/2;
     if(gimbal_execute == true){
-        copter.camera_mount.set_angle_targets(0, -90, -N);
+        copter.camera_mount.set_angle_targets(0, 90, -N);
 
         if((AP_HAL::millis() - gimbal_now) < 4000){ return;}
 
         repeat:
         if(gimbal_iter <= 2*N){
-            copter.camera_mount.set_angle_targets(0, -90, (float)(-N+gimbal_iter));
-            if((AP_HAL::millis() - gimbal_now) < (4000 + gimbal_wait*(gimbal_iter+1))){ 
+            copter.camera_mount.set_angle_targets(0, 90, (float)(-N+gimbal_iter));
+            if((AP_HAL::millis() - gimbal_now) < (uint32_t)(4000 + gimbal_wait*(gimbal_iter/gimbal_step+1))){ 
                 return;
             }
-            if((AP_HAL::millis() - gimbal_now) < (4000 + (gimbal_sample_time+gimbal_wait)*(gimbal_iter+1))){ 
-                gimbal_probe_samples[gimbal_iter] = gimbal_probe_samples[gimbal_iter] + copter.ARRC_LB5900.power_measure();
+            if((AP_HAL::millis() - gimbal_now) < (uint32_t)(4000 + (gimbal_sample_time+gimbal_wait)*(gimbal_iter/gimbal_step+1))){ 
+                gimbal_probe_samples[gimbal_iter/gimbal_step] = gimbal_probe_samples[gimbal_iter/gimbal_step] + copter.ARRC_RFE.get_power();
                 gimbal_num_samples++;
                 return;
             }
-            gimbal_probe_samples[gimbal_iter] /= gimbal_num_samples;
+            gimbal_probe_samples[gimbal_iter/gimbal_step] /= gimbal_num_samples;
             gimbal_num_samples = 0;
-            gimbal_iter++;
+            gimbal_iter = gimbal_iter + gimbal_step;
             goto repeat;
         }
 
@@ -196,37 +213,39 @@ void Copter::user_ARRC_gimbal()
         //                 18.88, 18.65};
 
         int8_t i,j,k;
-        float x[2*N+1];
-        for(i = 0; i<=2*N; i++){
-            x[i] = i - N;
+        int8_t n = gimbal_angle_span/gimbal_step;
+
+        float x[n + 1];
+        for(i = 0; i<=2*N; i=i+gimbal_step){
+            x[i/gimbal_step] = i - N;
         }
 
         // Polynomial Fit using Least Squares
 
-        float X[5];                        //Array that will store the values of sigma(xi),sigma(xi^2),sigma(xi^3)....sigma(xi^2n)
+        float X[5];                             //Array that will store the values of sigma(xi),sigma(xi^2),sigma(xi^3)....sigma(xi^2n)
         for (i=0;i<5;i++)
         {
             X[i]=0;
-            for (j=0;j<2*N+1;j++)
-                X[i]=X[i]+pow(x[j],i);        //consecutive positions of the array will store N,sigma(xi),sigma(xi^2),sigma(xi^3)....sigma(xi^2n)
+            for (j=0;j<n+1;j++)
+                X[i]=X[i]+pow(x[j],i);          //consecutive positions of the array will store N,sigma(xi),sigma(xi^2),sigma(xi^3)....sigma(xi^2n)
         }
-        float B[3][4],a[3];            //B is the Normal matrix(augmented) that will store the equations, 'a' is for value of the final coefficients
+        float B[3][4];                     //B is the Normal matrix(augmented) that will store the equations, 'a' is for value of the final coefficients
         for (i=0;i<=2;i++)
             for (j=0;j<=2;j++)
                 B[i][j]=X[i+j];
 
-        float Y[3];                    //Array to store the values of sigma(yi),sigma(xi*yi),sigma(xi^2*yi)...sigma(xi^n*yi)
+        float Y[3];                             //Array to store the values of sigma(yi),sigma(xi*yi),sigma(xi^2*yi)...sigma(xi^n*yi)
         for (i=0;i<3;i++)
         {    
             Y[i]=0;
-            for (j=0;j<2*N+1;j++)
+            for (j=0;j<n+1;j++)
             Y[i]=Y[i]+pow(x[j],i)*gimbal_probe_samples[j];        //consecutive positions will store sigma(yi),sigma(xi*yi),sigma(xi^2*yi)...sigma(xi^n*yi)
         }
 
         for (i=0;i<=2;i++)
-            B[i][3]=Y[i];                //load the values of Y as the last column of B(Normal Matrix but augmented) 
+            B[i][3]=Y[i];                       //load the values of Y as the last column of B(Normal Matrix but augmented) 
         
-        for (i=0;i<3;i++)                    //From now Gaussian Elimination starts(can be ignored) to solve the set of linear equations (Pivotisation)
+        for (i=0;i<3;i++)                       //From now Gaussian Elimination starts(can be ignored) to solve the set of linear equations (Pivotisation)
             for (k=i+1;k<3;k++)
                 if (B[i][i]<B[k][i])
                     for (j=0;j<=3;j++)
@@ -236,7 +255,7 @@ void Copter::user_ARRC_gimbal()
                         B[k][j]=temp;
                     }
 
-        for (i=0;i<2;i++)            //loop to perform the gauss elimination
+        for (i=0;i<2;i++)                       //loop to perform the gauss elimination
             for (k=i+1;k<3;k++)
                 {
                     float t=B[k][i]/B[i][i];
@@ -244,23 +263,69 @@ void Copter::user_ARRC_gimbal()
                         B[k][j]=B[k][j]-t*B[i][j];    //make the elements below the pivot elements equal to zero or elimnate the variables
                 }
 
-        for (i=2;i>=0;i--)                //back-substitution
-        {                        //x is an array whose values correspond to the values of x,y,z..
-            a[i]=B[i][3];                //make the variable to be calculated equal to the rhs of the last equation
+        float a[3] = {0,0,0};
+        for (i=2;i>=0;i--)                      //back-substitution
+        {                                       //x is an array whose values correspond to the values of x,y,z..
+            a[i]=B[i][3];                       //make the variable to be calculated equal to the rhs of the last equation
             for (j=0;j<3;j++)
-                if (j!=i)            //then subtract all the lhs values except the coefficient of the variable whose value                                   is being calculated
+                if (j!=i)                       //then subtract all the lhs values except the coefficient of the variable whose value                                   is being calculated
                     a[i]=a[i]-B[i][j]*a[j];
-            a[i]=a[i]/B[i][i];            //now finally divide the rhs by the coefficient of the variable to be calculated
+            a[i]=a[i]/B[i][i];                  //now finally divide the rhs by the coefficient of the variable to be calculated
+        }
+
+        // Check if we got a local maxima. Otherwise, the alignment failed
+        if(a[2] > 0 || is_zero(a[2])){
+            gcs().send_text(MAV_SEVERITY_INFO, "Gimbal alignment failed: No Maxima");
+            gimbal_execute = false;
+            return;
+        }
+
+        // Evaluate resulting curve fitting at each measured angle
+        float y[n + 1];
+        for(i = 0; i<=n; i++){
+            y[i] = a[2]*x[i]*x[i] + a[1]*x[i] + a[0];
+        }
+
+        // Compute correlation coefficient
+        float sum_X = 0, sum_Y = 0, sum_XY = 0;
+        float squareSum_X = 0, squareSum_Y = 0;
+
+        for (i = 0; i <= n; i++)
+        {
+            // sum of elements of array X (sampled points)
+            sum_X = sum_X + gimbal_probe_samples[i];
+    
+            // sum of elements of array Y (output of the computed curve)
+            sum_Y = sum_Y + y[i];
+    
+            // sum of X[i] * Y[i].
+            sum_XY = sum_XY + gimbal_probe_samples[i] * y[i];
+    
+            // sum of square of array elements.
+            squareSum_X = squareSum_X + gimbal_probe_samples[i] * gimbal_probe_samples[i];
+            squareSum_Y = squareSum_Y + y[i] * y[i];
+        }
+  
+        // use formula for calculating correlation coefficient.
+        float corr = (float)(n * sum_XY - sum_X * sum_Y) 
+                    / sqrtf((n * squareSum_X - sum_X * sum_X) 
+                        * (n * squareSum_Y - sum_Y * sum_Y));
+
+        // Check the correlation coefficient. Alignment failed if corr is too low
+        if(corr < 0.85){
+            gcs().send_text(MAV_SEVERITY_INFO, "Gimbal alignment failed: R = %f",corr);
+            gimbal_execute = false;
+            return;
         }
 
         // Resulting yaw angle
-        float aligned_yaw = 0;
-        if(!is_zero(a[2])) aligned_yaw = -a[1]/(2*a[2]);
+        float aligned_yaw = -a[1]/(2*a[2]);
 
         gcs().send_text(MAV_SEVERITY_INFO, "Gimbal alignment correction: %f deg",aligned_yaw);
+        gcs().send_text(MAV_SEVERITY_INFO, "Gimbal alignment success: R = %f",corr);
 
         // Send result to ground station and gimbal
-        copter.camera_mount.set_angle_targets(0, -90, aligned_yaw);
+        copter.camera_mount.set_angle_targets(0, 90, aligned_yaw);
 
         // Compute absolute yaw angle
         aligned_yaw = wrap_180(AP::ahrs().yaw*RAD_TO_DEG + aligned_yaw);
@@ -295,7 +360,7 @@ void Copter::user_ARRC_gimbal_sim()
     float a = sinf(delta_lat/2)*sinf(delta_lat/2) + cosf(curr_lat)*cosf(tar_lat)*sinf(delta_lng/2)*sinf(delta_lng/2);
 
     // Compute distance to target
-    float target_distance = 2.0f*RADIUS_OF_EARTH*atan2f(sqrtf(a),sqrtf(1-a))*100.0f; // in cm
+    float target_distance = 2.0f*RADIUS_OF_EARTH*atan2f(sqrtf(a),sqrtf(1-a)); // in meters
 
     // Compute bearing to target
     float y = sinf(delta_lng)*cosf(tar_lat);
@@ -304,6 +369,10 @@ void Copter::user_ARRC_gimbal_sim()
 
     float fixed_yaw = g2.user_parameters.get_user_sensor1()*DEG_TO_RAD;
     float ang_diff = wrap_PI(bearing - fixed_yaw);
+
+    // Compute target vector x-y components in the target's reference frame (NWU)
+    y = target_distance*(sinf(bearing)*cosf(fixed_yaw) - cosf(bearing)*sinf(fixed_yaw)); // Aligned with West when fixed_yaw = 0
+    x = -target_distance*(sinf(bearing)*sinf(fixed_yaw) + cosf(bearing)*cosf(fixed_yaw)); // Aligned with North when fixed_yaw = 0
 
     int32_t target_alt_cm = 0;
     if (!target.get_alt_cm(Location::AltFrame::ABOVE_HOME, target_alt_cm)) {
@@ -315,28 +384,102 @@ void Copter::user_ARRC_gimbal_sim()
     }
 
     // Compute height difference
-    float z = target_alt_cm - current_alt_cm;
+    float z = (float)(current_alt_cm - target_alt_cm)/100.0f; // in meters
 
-    float dist2target = fabsf(current_loc.get_distance(target)) + fabsf(z/100.0f);
+    //Compute distance and slope wrt target
+    float horzdist2target = current_loc.get_distance(target);
+    float dist2target = sqrtf(horzdist2target*horzdist2target + (float)(z*z));
+    float slope = 0;
+    if(!is_zero(horzdist2target)) slope = fabsf((float)z/horzdist2target);
 
     // initialise all angles to zero
     Vector3f angles_to_target_rad;
     angles_to_target_rad.zero();
 
     if(dist2target > 10){
-        // tilt calcs
-        angles_to_target_rad.y = atan2f(z, target_distance*cosf(ang_diff));
-        
-        // roll calcs
-        angles_to_target_rad.x = atan2f(z, target_distance*sinf(ang_diff)) + M_PI_2;
+        if(g2.user_parameters.get_user_sensor2() == 0 || slope < 0.38f){
 
-        // pan is set to a fixed value defined by user
-        angles_to_target_rad.z = fixed_yaw;
-        angles_to_target_rad.z =  wrap_PI(angles_to_target_rad.z - AP::ahrs().yaw);
+            // Original ArduPilot mode
+
+            // tilt calcs
+            angles_to_target_rad.y = atan2f(-z, target_distance);
+
+            // roll is leveled to the ground
+
+            // pan calcs
+            angles_to_target_rad.z = bearing;
+            angles_to_target_rad.z = wrap_PI((angles_to_target_rad.z - (double)AP::ahrs().yaw));
+        }
+        else if(g2.user_parameters.get_user_sensor2() == 1){
+
+            // Point gimbal straight down without corrections
+
+            // tilt calcs. Fixed 
+            angles_to_target_rad.y = M_PI_2;
+            
+            // roll calcs. Fixed
+            angles_to_target_rad.x = 0;
+
+            // pan calcs. Fixed and equal to user param
+            angles_to_target_rad.z = fixed_yaw;
+            angles_to_target_rad.z = wrap_PI(angles_to_target_rad.z - AP::ahrs().yaw);
+        }
+        else if(g2.user_parameters.get_user_sensor2() == 2){
+
+            // Old Technique (less accurate)
+
+            // tilt calcs
+            angles_to_target_rad.y = atan2f(z, target_distance*cosf(ang_diff));
+            
+            // roll calcs
+            angles_to_target_rad.x = atan2f(z, target_distance*sinf(ang_diff)) + M_PI_2;
+
+            // pan is set to a fixed value defined by user
+            angles_to_target_rad.z = fixed_yaw;
+            angles_to_target_rad.z =  wrap_PI(angles_to_target_rad.z - AP::ahrs().yaw);
+        }
+        else if(g2.user_parameters.get_user_sensor2() == 3){
+
+            // Hpol aligned mode
+
+            float D = sqrtf(x*x + y*y + z*z);
+            float A = sqrtf(x*x*x*x + x*x*y*y + 2*x*x*z*z + y*y*z*z + z*z*z*z);
+
+            // tilt calcs = atan2(Reb(1,3),Reb(3,3))
+            angles_to_target_rad.y = atan2f(-z/D, -x/sqrtf(x*x+z*z));
+            
+            // roll calcs = atan2(-Reb(2,3),sqrt(1-Reb(2,3)^2))
+            float aux = -y*z*A/((x*x+z*z)*D*D);
+            angles_to_target_rad.x = atan2f(-aux, sqrtf(1 - aux*aux));
+
+            // pan calcs = atan2(Reb(2,1),Reb(2,2))
+            angles_to_target_rad.z = atan2f(-x*y/(x*x+z*z),1) + fixed_yaw;
+            angles_to_target_rad.z = wrap_PI((angles_to_target_rad.z - (double)AP::ahrs().yaw));
+        }
+        else if(g2.user_parameters.get_user_sensor2() == 4){
+
+            // Vpol aligned mode
+
+            float D = sqrtf(x*x + y*y + z*z);
+            float A = sqrtf(y*y*y*y + x*x*y*y + 2*y*y*z*z + x*x*z*z + z*z*z*z);
+
+            // tilt calcs = atan2(Reb(1,3),Reb(3,3))
+            angles_to_target_rad.y = atan2f(-z/D, -x*z*A/((y*y+z*z)*D*D));
+            
+            // roll calcs = atan2(-Reb(2,3),sqrt(1-Reb(2,3)^2))
+            float aux = -y/(sqrtf(y*y+z*z));
+            angles_to_target_rad.x = atan2f(-aux, sqrtf(1 - aux*aux));
+
+            // pan calcs = atan2(Reb(2,1),Reb(2,2))
+            angles_to_target_rad.z = atan2f(0,z/sqrtf(y*y+z*z)) + fixed_yaw;
+            angles_to_target_rad.z = wrap_PI((angles_to_target_rad.z - (double)AP::ahrs().yaw));
+        }
     }
     
     printf("targer_dist: %5.2f \n",target_distance);
-    printf("Target_Height: %5.2f \n",z);
+    printf("Target_Z: %5.2f \n",z);
+    printf("Target_X: %5.2f \n",x);
+    printf("Target_Y: %5.2f \n",y);
     printf("Ang_diff: %5.2f \n",ang_diff);
     printf("Gimbal_Roll: %5.2f \n",((float)angles_to_target_rad.x)*RAD_TO_DEG);
     printf("Gimbal_Pitch: %5.2f \n",((float)angles_to_target_rad.y)*RAD_TO_DEG);
@@ -718,7 +861,7 @@ void Copter::userhook_auxSwitch2()
     // Execution of the ARRC gimbal movement
     // put your aux switch #2 handler here (CHx_OPT = 48)
     gcs().send_text(MAV_SEVERITY_INFO, "Executing antenna alignment");
-    memset(gimbal_probe_samples, 0, (gimbal_angle_span + 1) * sizeof(float));
+    memset(gimbal_probe_samples, 0, (gimbal_angle_span/gimbal_step + 1) * sizeof(float));
     gimbal_num_samples = 0;
     gimbal_iter = 0;
     gimbal_now = AP_HAL::millis();

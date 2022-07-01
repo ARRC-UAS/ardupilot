@@ -853,6 +853,7 @@ ap_message GCS_MAVLINK::mavlink_id_to_ap_message_id(const uint32_t mavlink_id) c
         { MAVLINK_MSG_ID_WINCH_STATUS,          MSG_WINCH_STATUS},
         { MAVLINK_MSG_ID_ESC_TELEMETRY_1_TO_4,  MSG_ESC_TELEMETRY},
         { MAVLINK_MSG_ID_WATER_DEPTH,           MSG_WATER_DEPTH},
+        { MAVLINK_MSG_ID_ARRC_SENSOR_RAW,       MSG_ARRC_RFE}, //ARRC custom RF-SA message
             };
 
     for (uint8_t i=0; i<ARRAY_SIZE(map); i++) {
@@ -5234,6 +5235,11 @@ bool GCS_MAVLINK::accept_packet(const mavlink_status_t &status,
     }
 
     if (msg.sysid == sysid_my_gcs()) {
+        return true;
+    }
+
+    if (msg.msgid == MAVLINK_MSG_ID_ARRC_SENSOR_RAW) {
+        // ARRC packets are not forwarded, they have their own stream rate
         return true;
     }
 
