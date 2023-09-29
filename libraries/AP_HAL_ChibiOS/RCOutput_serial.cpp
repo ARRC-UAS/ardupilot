@@ -16,12 +16,18 @@
 #include <hal.h>
 #include "RCOutput.h"
 #include <AP_Math/AP_Math.h>
+#include <AP_BoardConfig/AP_BoardConfig.h>
 #include "hwdef/common/stm32_util.h"
 #include <AP_InternalError/AP_InternalError.h>
 #include <AP_Vehicle/AP_Vehicle_Type.h>
 
 #if HAL_USE_PWM == TRUE
-#ifndef DISABLE_DSHOT
+#if HAL_DSHOT_ENABLED
+
+#if HAL_WITH_IO_MCU
+#include <AP_IOMCU/AP_IOMCU.h>
+extern AP_IOMCU iomcu;
+#endif
 
 using namespace ChibiOS;
 
@@ -33,24 +39,28 @@ bool RCOutput::dshot_send_command(pwm_group& group, uint8_t command, uint8_t cha
         return false;
     }
 
-    if (irq.waiter || (group.dshot_state != DshotState::IDLE && group.dshot_state != DshotState::RECV_COMPLETE)) {
+    if (soft_serial_waiting() || (group.dshot_state != DshotState::IDLE && group.dshot_state != DshotState::RECV_COMPLETE)) {
         // doing serial output or DMAR input, don't send DShot pulses
         return false;
     }
 
+#ifdef HAL_GPIO_LINE_GPIO81
     TOGGLE_PIN_DEBUG(81);
+#endif
     // first make sure we have the DMA channel before anything else
-
+#if AP_HAL_SHARED_DMA_ENABLED
     osalDbgAssert(!group.dma_handle->is_locked(), "DMA handle is already locked");
     group.dma_handle->lock();
+#endif
 
     // only the timer thread releases the locks
     group.dshot_waiter = rcout_thread_ctx;
     bool bdshot_telem = false;
 #ifdef HAL_WITH_BIDIR_DSHOT
+    uint32_t active_channels = group.ch_mask & group.en_mask;
     // no need to get the input capture lock
     group.bdshot.enabled = false;
-    if ((_bdshot.mask & group.ch_mask) == group.ch_mask) {
+    if ((_bdshot.mask & active_channels) == active_channels) {
         bdshot_telem = true;
         // it's not clear why this is required, but without it we get no output
         if (group.pwm_started) {
@@ -68,9 +78,13 @@ bool RCOutput::dshot_send_command(pwm_group& group, uint8_t command, uint8_t cha
     const uint16_t packet = create_dshot_packet(command, true, bdshot_telem);
 
     for (uint8_t i = 0; i < 4; i++) {
-        if (group.chan[i] == chan || (chan == RCOutput::ALL_CHANNELS && group.is_chan_enabled(i))) {
+        if (!group.is_chan_enabled(i)) {
+            continue;
+        }
+
+        if (group.chan[i] == chan || chan == RCOutput::ALL_CHANNELS) {
             fill_DMA_buffer_dshot(group.dma_buffer + i, 4, packet, group.bit_width_mul);
-        } else if (group.is_chan_enabled(i)) {
+        } else {
             fill_DMA_buffer_dshot(group.dma_buffer + i, 4, zero_packet, group.bit_width_mul);
         }
     }
@@ -78,7 +92,9 @@ bool RCOutput::dshot_send_command(pwm_group& group, uint8_t command, uint8_t cha
     chEvtGetAndClearEvents(group.dshot_event_mask);
     // start sending the pulses out
     send_pulses_DMAR(group, DSHOT_BUFFER_LENGTH);
+#ifdef HAL_GPIO_LINE_GPIO81
     TOGGLE_PIN_DEBUG(81);
+#endif
 
     return true;
 }
@@ -92,13 +108,20 @@ void RCOutput::send_dshot_command(uint8_t command, uint8_t chan, uint32_t comman
         return;
     }
     // not an FMU channel
-    if (chan < chan_offset) {
-        return;
+    if (chan < chan_offset || chan == ALL_CHANNELS) {
+#if HAL_WITH_IO_MCU
+        if (AP_BoardConfig::io_dshot()) {
+            iomcu.send_dshot_command(command, chan, command_timeout_ms, repeat_count, priority);
+        }
+#endif
+        if (chan != ALL_CHANNELS) {
+            return;
+        }
     }
 
     DshotCommandPacket pkt;
     pkt.command = command;
-    pkt.chan = chan + chan_offset;
+    pkt.chan = chan - chan_offset;
     if (command_timeout_ms == 0) {
         pkt.cycle = MAX(10, repeat_count);
     } else {
@@ -114,15 +137,15 @@ void RCOutput::send_dshot_command(uint8_t command, uint8_t chan, uint32_t comman
 // Set the dshot outputs that should be reversed (as opposed to 3D)
 // The chanmask passed is added (ORed) into any existing mask.
 // The mask uses servo channel numbering
-void RCOutput::set_reversed_mask(uint16_t chanmask) {
-    _reversed_mask |= (chanmask >> chan_offset);
+void RCOutput::set_reversed_mask(uint32_t chanmask) {
+    _reversed_mask |= chanmask;
 }
 
 // Set the dshot outputs that should be reversible/3D
 // The chanmask passed is added (ORed) into any existing mask.
 // The mask uses servo channel numbering
-void RCOutput::set_reversible_mask(uint16_t chanmask) {
-    _reversible_mask |= (chanmask >> chan_offset);
+void RCOutput::set_reversible_mask(uint32_t chanmask) {
+    _reversible_mask |= chanmask;
 }
 
 // Update the dshot outputs that should be reversible/3D at 1Hz
@@ -137,6 +160,9 @@ void RCOutput::update_channel_masks() {
     for (uint8_t i=0; i<HAL_PWM_COUNT; i++) {
         switch (_dshot_esc_type) {
             case DSHOT_ESC_BLHELI:
+            case DSHOT_ESC_BLHELI_S:
+            case DSHOT_ESC_BLHELI_EDT:
+            case DSHOT_ESC_BLHELI_EDT_S:
                 if (_reversible_mask & (1U<<i)) {
                     send_dshot_command(DSHOT_3D_ON, i, 0, 10, true);
                 }
@@ -148,8 +174,12 @@ void RCOutput::update_channel_masks() {
                 break;
         }
     }
+
+    if (_dshot_esc_type == DSHOT_ESC_BLHELI_EDT || _dshot_esc_type == DSHOT_ESC_BLHELI_EDT_S) {
+        send_dshot_command(DSHOT_EXTENDED_TELEMETRY_ENABLE, ALL_CHANNELS, 0, 10, true);
+    }
 #endif
 }
 
-#endif // DISABLE_DSHOT
+#endif // HAL_DSHOT_ENABLED
 #endif // HAL_USE_PWM

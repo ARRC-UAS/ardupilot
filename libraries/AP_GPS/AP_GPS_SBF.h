@@ -22,10 +22,6 @@
 #include "AP_GPS.h"
 #include "GPS_Backend.h"
 
-#ifndef AP_GPS_SBF_ENABLED
-  #define AP_GPS_SBF_ENABLED AP_GPS_BACKEND_DEFAULT_ENABLED
-#endif
-
 #if AP_GPS_SBF_ENABLED
 
 #define SBF_DISK_ACTIVITY (1 << 7)
@@ -49,7 +45,9 @@ public:
 
     void broadcast_configuration_failure_reason(void) const override;
 
+#if HAL_GCS_ENABLED
     bool supports_mavlink_gps_rtk_message(void) const override { return true; };
+#endif
 
     // get the velocity lag, returns true if the driver is confident in the returned value
     bool get_lag(float &lag_sec) const override { lag_sec = 0.08f; return true; } ;

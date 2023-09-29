@@ -77,7 +77,7 @@ It is continually being expanded to provide support for new emerging vehicle typ
 The ArduPilot project is licensed under the GNU General Public
 License, version 3.
 
-- [Overview of license](https://dev.ardupilot.com/wiki/license-gplv3)
+- [Overview of license](https://ardupilot.org/dev/docs/license-gplv3.html)
 
 - [Full Text](https://github.com/ArduPilot/ardupilot/blob/master/COPYING.txt)
 
@@ -94,7 +94,7 @@ for reviewing patches on their specific area.
   - ***Bug Master***
 - [Grant Morphett](https://github.com/gmorph):
   - ***Vehicle***: Rover
-- [Jacob Walser](https://github.com/jaxxzer):
+- [Willian Galvani](https://github.com/williangalvani):
   - ***Vehicle***: Sub
 - [Lucas De Marchi](https://github.com/lucasdemarchi):
   - ***Subsystem***: Linux

@@ -99,7 +99,7 @@ void AP_SmartRTL::init()
     }
 
     // constrain the path length, in case the user decided to make the path unreasonably long.
-    _points_max = constrain_int16(_points_max, 0, SMARTRTL_POINTS_MAX);
+    _points_max.set(constrain_int16(_points_max, 0, SMARTRTL_POINTS_MAX));
 
     // check if user has disabled SmartRTL
     if (_points_max == 0 || !is_positive(_accuracy)) {
@@ -230,7 +230,9 @@ void AP_SmartRTL::set_home(bool position_ok, const Vector3f& current_pos)
     }
 
     // successfully added point and reset path
-    _last_good_position_ms = AP_HAL::millis();
+    const uint32_t now = AP_HAL::millis();
+    _last_good_position_ms = now;
+    _last_position_save_ms = now;
     _active = true;
     _home_saved = true;
 }

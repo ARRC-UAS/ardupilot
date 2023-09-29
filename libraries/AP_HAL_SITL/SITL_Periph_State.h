@@ -4,6 +4,8 @@
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL && defined(HAL_BUILD_AP_PERIPH)
 
+#include "SITL_State_common.h"
+
 #include "AP_HAL_SITL.h"
 #include "AP_HAL_SITL_Namespace.h"
 #include "HAL_SITL_Class.h"
@@ -22,9 +24,29 @@
 #include <AP_Terrain/AP_Terrain.h>
 #include <AP_HAL/utility/Socket.h>
 
+class SimMCast : public SITL::Aircraft {
+public:
+    SimMCast(const char *frame_str);
+    void update(const struct sitl_input &input) override;
+
+private:
+    int mc_fd = -1;
+    int servo_fd = -1;
+    struct sockaddr_in in_addr;
+
+    // offset between multicast timestamp and local timestamp
+    uint64_t base_time_us;
+
+    void multicast_open();
+    void multicast_read();
+
+    void servo_send(void);
+    void servo_fd_open(void);
+};
+
 class HAL_SITL;
 
-class HALSITL::SITL_State {
+class HALSITL::SITL_State : public SITL_State_Common {
     friend class HALSITL::Scheduler;
     friend class HALSITL::Util;
     friend class HALSITL::GPIO;
@@ -39,18 +61,10 @@ public:
         return _base_port;
     }
 
-    // simulated airspeed, sonar and battery monitor
-    uint16_t sonar_pin_value;    // pin 0
-    uint16_t airspeed_pin_value; // pin 1
-    uint16_t airspeed_2_pin_value; // pin 2
-    uint16_t voltage_pin_value;  // pin 13
-    uint16_t current_pin_value;  // pin 12
-    uint16_t voltage2_pin_value;  // pin 15
-    uint16_t current2_pin_value;  // pin 14
     // paths for UART devices
     const char *_uart_path[9] {
         "none:0",
-        "fifo:gps",
+        "GPS1",
         "none:1",
         "none:2",
         "none:3",
@@ -62,9 +76,7 @@ public:
 
     uint8_t get_instance() const { return _instance; }
 
-    SITL::SerialDevice *create_serial_sim(const char *name, const char *arg) {
-        return nullptr;
-    }
+    bool run_in_maintenance_mode() const { return _maintenance; }
 
 private:
 
@@ -75,6 +87,10 @@ private:
     const char *defaults_path = HAL_PARAM_DEFAULTS_PATH;
 
     uint8_t _instance;
+    bool _maintenance;
+
+    // simulated GPS devices
+    SITL::GPS *gps[1];  // constrained by # of parameter sets
 };
 
 #endif

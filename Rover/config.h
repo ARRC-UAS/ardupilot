@@ -14,11 +14,6 @@
 // FrSky telemetry support
 //
 
-#ifndef FRSKY_TELEM_ENABLED
-  #define FRSKY_TELEM_ENABLED ENABLED
-#endif
-
-
 #ifndef CH7_OPTION
   #define CH7_OPTION CH7_SAVE_WP
 #endif
@@ -34,27 +29,6 @@
   #error XXX
   #error XXX You must set MODE_CHANNEL to 5, 6, 7 or 8
   #error XXX
-#endif
-
-//////////////////////////////////////////////////////////////////////////////
-// CAMERA control
-//
-#ifndef CAMERA
-  #define CAMERA ENABLED
-#endif
-
-//////////////////////////////////////////////////////////////////////////////
-// GRIPPER control
-//
-#ifndef GRIPPER_ENABLED
- # define GRIPPER_ENABLED ENABLED
-#endif
-
-//////////////////////////////////////////////////////////////////////////////
-// RALLY POINTS
-//
-#ifndef AP_RALLY
- #define AP_RALLY ENABLED
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -79,6 +53,18 @@
 #endif
 
 #define DEFAULT_LOG_BITMASK    0xffff
+
+//////////////////////////////////////////////////////////////////////////////
+// Dock mode - allows vehicle to dock to a docking target
+#ifndef MODE_DOCK_ENABLED
+# define MODE_DOCK_ENABLED AC_PRECLAND_ENABLED
+#endif
+
+//////////////////////////////////////////////////////////////////////////////
+// Follow mode - allows vehicle to follow target
+#ifndef MODE_FOLLOW_ENABLED
+# define MODE_FOLLOW_ENABLED AP_FOLLOW_ENABLED
+#endif
 
 
 //////////////////////////////////////////////////////////////////////////////

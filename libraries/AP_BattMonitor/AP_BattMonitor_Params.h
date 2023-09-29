@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AP_Param/AP_Param.h>
+#include "AP_BattMonitor_config.h"
 
 class AP_BattMonitor_Params {
 public:
@@ -9,8 +10,7 @@ public:
     AP_BattMonitor_Params(void);
 
     /* Do not allow copies */
-    AP_BattMonitor_Params(const AP_BattMonitor_Params &other) = delete;
-    AP_BattMonitor_Params &operator=(const AP_BattMonitor_Params&) = delete;
+    CLASS_NO_COPY(AP_BattMonitor_Params);
 
     // low voltage sources (used for BATT_LOW_TYPE parameter)
     enum BattMonitor_LowVoltage_Source {
@@ -24,6 +24,7 @@ public:
         MPPT_Power_On_At_Arm                = (1U<<3),  // MPPT Enabled when vehicle is armed, if HW supports it
         MPPT_Power_Off_At_Boot              = (1U<<4),  // MPPT Disabled at startup (aka boot), if HW supports it
         MPPT_Power_On_At_Boot               = (1U<<5),  // MPPT Enabled at startup (aka boot), if HW supports it. If Power_Off_at_Boot is also set, the behavior is Power_Off_at_Boot
+        GCS_Resting_Voltage                 = (1U<<6),  // send resistance resting voltage to GCS
     };
 
     BattMonitor_LowVoltage_Source failsafe_voltage_source(void) const { return (enum BattMonitor_LowVoltage_Source)_failsafe_voltage_source.get(); }
@@ -43,4 +44,7 @@ public:
     AP_Int8  _failsafe_voltage_source;  /// voltage type used for detection of low voltage event
     AP_Int8  _failsafe_low_action;      /// action to preform on a low battery failsafe
     AP_Int8  _failsafe_critical_action; /// action to preform on a critical battery failsafe
+#if AP_BATTERY_ESC_TELEM_OUTBOUND_ENABLED
+    AP_Int8  _esc_telem_outbound_index; /// bitmask of ESCs to forward voltage, current, consumption and temperature to.
+#endif
 };

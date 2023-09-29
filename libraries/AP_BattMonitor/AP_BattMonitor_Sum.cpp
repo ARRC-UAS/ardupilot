@@ -1,7 +1,12 @@
+#include "AP_BattMonitor_config.h"
+
+#if AP_BATTERY_SUM_ENABLED
+
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Common/AP_Common.h>
 #include <AP_Math/AP_Math.h>
 #include "AP_BattMonitor.h"
+
 #include "AP_BattMonitor_Sum.h"
 
 /*
@@ -73,13 +78,24 @@ AP_BattMonitor_Sum::read()
             current_count++;
         }
     }
+    const uint32_t tnow_us = AP_HAL::micros();
+    const uint32_t dt_us = tnow_us - _state.last_time_micros;
+
     if (voltage_count > 0) {
         _state.voltage = voltage_sum / voltage_count;
-        _state.last_time_micros = AP_HAL::micros();
     }
     if (current_count > 0) {
         _state.current_amps = current_sum;
     }
+
+    update_consumed(_state, dt_us);
+
     _has_current = (current_count > 0);
     _state.healthy = (voltage_count > 0);
+
+    if (_state.healthy) {
+        _state.last_time_micros = tnow_us;
+    }
 }
+
+#endif  // AP_BATTERY_SUM_ENABLED

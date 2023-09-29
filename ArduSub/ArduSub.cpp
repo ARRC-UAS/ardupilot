@@ -18,10 +18,10 @@
 #include "Sub.h"
 
 #define SCHED_TASK(func, rate_hz, max_time_micros, priority) SCHED_TASK_CLASS(Sub, &sub, func, rate_hz, max_time_micros, priority)
+#define FAST_TASK(func) FAST_TASK_CLASS(Sub, &sub, func)
 
 /*
-  scheduler table - all regular tasks apart from the fast_loop()
-  should be listed here.
+  scheduler table - all tasks should be listed here.
 
   All entries in this table must be ordered by priority.
 
@@ -46,10 +46,33 @@ SCHED_TASK_CLASS arguments:
  */
 
 const AP_Scheduler::Task Sub::scheduler_tasks[] = {
+    // update INS immediately to get current gyro data populated
+    FAST_TASK_CLASS(AP_InertialSensor, &sub.ins, update),
+    // run low level rate controllers that only require IMU data
+    FAST_TASK(run_rate_controller),
+    // send outputs to the motors library immediately
+    FAST_TASK(motors_output),
+     // run EKF state estimator (expensive)
+    FAST_TASK(read_AHRS),
+    // Inertial Nav
+    FAST_TASK(read_inertia),
+    // check if ekf has reset target heading
+    FAST_TASK(check_ekf_yaw_reset),
+    // run the attitude controllers
+    FAST_TASK(update_flight_mode),
+    // update home from EKF if necessary
+    FAST_TASK(update_home_from_EKF),
+    // check if we've reached the surface or bottom
+    FAST_TASK(update_surface_and_bottom_detector),
+#if HAL_MOUNT_ENABLED
+    // camera mount's fast update
+    FAST_TASK_CLASS(AP_Mount, &sub.camera_mount, update_fast),
+#endif
+
     SCHED_TASK(fifty_hz_loop,         50,     75,   3),
     SCHED_TASK_CLASS(AP_GPS, &sub.gps, update, 50, 200,   6),
 #if AP_OPTICALFLOW_ENABLED
-    SCHED_TASK_CLASS(OpticalFlow,          &sub.optflow,             update,         200, 160,   9),
+    SCHED_TASK_CLASS(AP_OpticalFlow,          &sub.optflow,             update,         200, 160,   9),
 #endif
     SCHED_TASK(update_batt_compass,   10,    120,  12),
     SCHED_TASK(read_rangefinder,      20,    100,  15),
@@ -57,17 +80,13 @@ const AP_Scheduler::Task Sub::scheduler_tasks[] = {
     SCHED_TASK(three_hz_loop,          3,     75,  21),
     SCHED_TASK(update_turn_counter,   10,     50,  24),
     SCHED_TASK_CLASS(AP_Baro,             &sub.barometer,    accumulate,          50,  90,  27),
-    SCHED_TASK_CLASS(AP_Notify,           &sub.notify,       update,              50,  90,  30),
     SCHED_TASK(one_hz_loop,            1,    100,  33),
     SCHED_TASK_CLASS(GCS,                 (GCS*)&sub._gcs,   update_receive,     400, 180,  36),
     SCHED_TASK_CLASS(GCS,                 (GCS*)&sub._gcs,   update_send,        400, 550,  39),
-#if AC_FENCE == ENABLED
-    SCHED_TASK_CLASS(AC_Fence,            &sub.fence,        update,              10, 100,  42),
-#endif
 #if HAL_MOUNT_ENABLED
     SCHED_TASK_CLASS(AP_Mount,            &sub.camera_mount, update,              50,  75,  45),
 #endif
-#if CAMERA == ENABLED
+#if AP_CAMERA_ENABLED
     SCHED_TASK_CLASS(AP_Camera,           &sub.camera,       update,              50,  75,  48),
 #endif
     SCHED_TASK(ten_hz_logging_loop,   10,    350,  51),
@@ -75,13 +94,15 @@ const AP_Scheduler::Task Sub::scheduler_tasks[] = {
     SCHED_TASK_CLASS(AP_Logger,           &sub.logger,       periodic_tasks,     400, 300,  57),
     SCHED_TASK_CLASS(AP_InertialSensor,   &sub.ins,          periodic,           400,  50,  60),
     SCHED_TASK_CLASS(AP_Scheduler,        &sub.scheduler,    update_logging,     0.1,  75,  63),
-#if RPM_ENABLED == ENABLED
+#if AP_RPM_ENABLED
     SCHED_TASK_CLASS(AP_RPM,              &sub.rpm_sensor,   update,              10, 200,  66),
 #endif
-    SCHED_TASK_CLASS(Compass,             &sub.compass,      cal_update,         100, 100,  69),
     SCHED_TASK(terrain_update,        10,    100,  72),
-#if GRIPPER_ENABLED == ENABLED
+#if AP_GRIPPER_ENABLED
     SCHED_TASK_CLASS(AP_Gripper,          &sub.g2.gripper,   update,              10,  75,  75),
+#endif
+#if STATS_ENABLED == ENABLED
+    SCHED_TASK(stats_update,           1,    200,  76),
 #endif
 #ifdef USERHOOK_FASTLOOP
     SCHED_TASK(userhook_FastLoop,    100,     75,  78),
@@ -111,52 +132,18 @@ void Sub::get_scheduler_tasks(const AP_Scheduler::Task *&tasks,
 
 constexpr int8_t Sub::_failsafe_priorities[5];
 
-// Main loop - 400hz
-void Sub::fast_loop()
+void Sub::run_rate_controller()
 {
-    // update INS immediately to get current gyro data populated
-    ins.update();
+    const float last_loop_time_s = AP::scheduler().get_last_loop_time_s();
+    motors.set_dt(last_loop_time_s);
+    attitude_control.set_dt(last_loop_time_s);
+    pos_control.set_dt(last_loop_time_s);
 
     //don't run rate controller in manual or motordetection modes
-    if (control_mode != MANUAL && control_mode != MOTOR_DETECT) {
-        // run low level rate controllers that only require IMU data
+    if (control_mode != Mode::Number::MANUAL && control_mode != Mode::Number::MOTOR_DETECT) {
+        // run low level rate controllers that only require IMU data and set loop time
         attitude_control.rate_controller_run();
     }
-
-    // send outputs to the motors library
-    motors_output();
-
-    // run EKF state estimator (expensive)
-    // --------------------
-    read_AHRS();
-
-    // Inertial Nav
-    // --------------------
-    read_inertia();
-
-    // check if ekf has reset target heading
-    check_ekf_yaw_reset();
-
-    // run the attitude controllers
-    update_flight_mode();
-
-    // update home from EKF if necessary
-    update_home_from_EKF();
-
-    // check if we've reached the surface or bottom
-    update_surface_and_bottom_detector();
-
-#if HAL_MOUNT_ENABLED
-    // camera mount's fast update
-    camera_mount.update_fast();
-#endif
-
-    // log sensor health
-    if (should_log(MASK_LOG_ANY)) {
-        Log_Sensor_Health();
-    }
-
-    AP_Vehicle::fast_loop();
 }
 
 // 50 Hz tasks
@@ -214,7 +201,7 @@ void Sub::ten_hz_logging_loop()
     if (should_log(MASK_LOG_RCOUT)) {
         logger.Write_RCOUT();
     }
-    if (should_log(MASK_LOG_NTUN) && (mode_requires_GPS(control_mode) || !mode_has_manual_throttle(control_mode))) {
+    if (should_log(MASK_LOG_NTUN) && (sub.flightmode->requires_GPS() || !sub.flightmode->has_manual_throttle())) {
         pos_control.write_log();
     }
     if (should_log(MASK_LOG_IMU) || should_log(MASK_LOG_IMU_FAST) || should_log(MASK_LOG_IMU_RAW)) {
@@ -223,6 +210,11 @@ void Sub::ten_hz_logging_loop()
     if (should_log(MASK_LOG_CTUN)) {
         attitude_control.control_monitor_log();
     }
+#if HAL_MOUNT_ENABLED
+    if (should_log(MASK_LOG_CAMERA)) {
+        camera_mount.write_log();
+    }
+#endif
 }
 
 // twentyfive_hz_logging_loop
@@ -263,12 +255,14 @@ void Sub::three_hz_loop()
     // check if we've lost terrain data
     failsafe_terrain_check();
 
-#if AC_FENCE == ENABLED
+#if AP_FENCE_ENABLED
     // check if we have breached a fence
     fence_check();
-#endif // AC_FENCE_ENABLED
+#endif // AP_FENCE_ENABLED
 
+#if AP_SERVORELAYEVENTS_ENABLED
     ServoRelayEvents.update_events();
+#endif
 }
 
 // one_hz_loop - runs at 1Hz
@@ -285,17 +279,11 @@ void Sub::one_hz_loop()
     }
 
     if (!motors.armed()) {
-        // make it possible to change ahrs orientation at runtime during initial config
-        ahrs.update_orientation();
-
         motors.update_throttle_range();
     }
 
     // update assigned functions and enable auxiliary servos
     SRV_Channels::enable_aux_servos();
-
-    // update position controller alt limits
-    update_poscon_alt_max();
 
     // log terrain data
     terrain_logging();
@@ -366,5 +354,16 @@ bool Sub::get_wp_crosstrack_error_m(float &xtrack_error) const
     xtrack_error = 0;
     return true;
 }
+
+#if STATS_ENABLED == ENABLED
+/*
+  update AP_Stats
+*/
+void Sub::stats_update(void)
+{
+    g2.stats.set_flying(motors.armed());
+    g2.stats.update();
+}
+#endif
 
 AP_HAL_MAIN_CALLBACKS(&sub);

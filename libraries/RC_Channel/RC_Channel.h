@@ -2,9 +2,14 @@
 /// @brief	RC_Channel manager, with EEPROM-backed storage of constants.
 #pragma once
 
+#include "RC_Channel_config.h"
+
+#if AP_RC_CHANNEL_ENABLED
+
 #include <AP_Common/AP_Common.h>
 #include <AP_Param/AP_Param.h>
 #include <AP_Math/AP_Math.h>
+#include <AP_Common/Bitmask.h>
 
 #define NUM_RC_CHANNELS 16
 
@@ -88,8 +93,8 @@ public:
     // set and save trim if changed
     void       set_and_save_radio_trim(int16_t val) { radio_trim.set_and_save_ifchanged(val);}
 
-    // check if any of the trim/min/max param are configured in storage, this would indicate that the user has done a calibration at somepoint
-    bool       configured_in_storage() { return radio_min.configured_in_storage() || radio_max.configured_in_storage() || radio_trim.configured_in_storage(); }
+    // check if any of the trim/min/max param are configured, this would indicate that the user has done a calibration at somepoint
+    bool       configured() { return radio_min.configured() || radio_max.configured() || radio_trim.configured(); }
 
     ControlType get_type(void) const { return type_in; }
 
@@ -124,7 +129,7 @@ public:
         MISSION_RESET =       24, // Reset auto mission to start from first command
         ATTCON_FEEDFWD =      25, // enable/disable the roll and pitch rate feed forward
         ATTCON_ACCEL_LIM =    26, // enable/disable the roll, pitch and yaw accel limiting
-        RETRACT_MOUNT =       27, // Retract Mount
+        RETRACT_MOUNT1 =      27, // Retract Mount1
         RELAY =               28, // Relay pin on/off (only supports first relay)
         LANDING_GEAR =        29, // Landing gear controller
         LOST_VEHICLE_SOUND =  30, // Play lost vehicle sound
@@ -209,13 +214,17 @@ public:
         DISABLE_AIRSPEED_USE = 106, // equivalent to AIRSPEED_USE 0
         FW_AUTOTUNE =          107, // fixed wing auto tune
         QRTL =               108, // QRTL mode
+        CUSTOM_CONTROLLER =  109,  // use Custom Controller
+        KILL_IMU3 =          110, // disable third IMU (for IMU failure testing)
+        LOWEHEISER_STARTER = 111,  // allows for manually running starter
+
         // if you add something here, make sure to update the documentation of the parameter in RC_Channel.cpp!
         // also, if you add an option >255, you will need to fix duplicate_options_exist
 
         // options 150-199 continue user rc switch options
         CRUISE =             150,  // CRUISE mode
         TURTLE =             151,  // Turtle mode - flip over after crash
-        SIMPLE_HEADING_RESET = 152, // reset simple mode refernce heading to current
+        SIMPLE_HEADING_RESET = 152, // reset simple mode reference heading to current
         ARMDISARM =          153, // arm or disarm vehicle
         ARMDISARM_AIRMODE =  154, // arm or disarm vehicle enabling airmode
         TRIM_TO_CURRENT_SERVO_RC = 155, // trim to current servo and RC
@@ -224,7 +233,22 @@ public:
         OPTFLOW_CAL =        158, // optical flow calibration
         FORCEFLYING =        159, // enable or disable land detection for GPS based manual modes preventing land detection and maintainting set_throttle_mix_max
         WEATHER_VANE_ENABLE = 160, // enable/disable weathervaning
-        TURBINE_START =       161, // initialize turbine start sequence
+        TURBINE_START =      161, // initialize turbine start sequence
+        FFT_NOTCH_TUNE =     162, // FFT notch tuning function
+        MOUNT_LOCK =         163, // Mount yaw lock vs follow
+        LOG_PAUSE =          164, // Pauses logging if under logging rate control
+        ARM_EMERGENCY_STOP = 165, // ARM on high, MOTOR_ESTOP on low
+        CAMERA_REC_VIDEO =   166, // start recording on high, stop recording on low
+        CAMERA_ZOOM =        167, // camera zoom high = zoom in, middle = hold, low = zoom out
+        CAMERA_MANUAL_FOCUS = 168,// camera manual focus.  high = long shot, middle = stop focus, low = close shot
+        CAMERA_AUTO_FOCUS =  169, // camera auto focus
+        QSTABILIZE =         170, // QuadPlane QStabilize mode
+        MAG_CAL =            171, // Calibrate compasses (disarmed only)
+        BATTERY_MPPT_ENABLE = 172,// Battery MPPT Power enable. high = ON, mid = auto (controlled by mppt/batt driver), low = OFF. This effects all MPPTs.
+        PLANE_AUTO_LANDING_ABORT = 173, // Abort Glide-slope or VTOL landing during payload place or do_land type mission items
+        CAMERA_IMAGE_TRACKING = 174, // camera image tracking
+        CAMERA_LENS =        175, // camera lens selection
+
 
         // inputs from 200 will eventually used to replace RCMAP
         ROLL =               201, // roll input
@@ -236,6 +260,16 @@ public:
         FWD_THR =            209, // VTOL manual forward throttle
         AIRBRAKE =           210, // manual airbrake control
         WALKING_HEIGHT =     211, // walking robot height input
+        MOUNT1_ROLL =        212, // mount1 roll input
+        MOUNT1_PITCH =       213, // mount1 pitch input
+        MOUNT1_YAW =         214, // mount1 yaw input
+        MOUNT2_ROLL =        215, // mount2 roll input
+        MOUNT2_PITCH =       216, // mount3 pitch input
+        MOUNT2_YAW =         217, // mount4 yaw input
+        LOWEHEISER_THROTTLE= 218,  // allows for throttle on slider
+
+        // inputs 248-249 are reserved for the Skybrush fork at
+        // https://github.com/skybrush-io/ardupilot
 
         // inputs for the use of onboard lua scripting
         SCRIPTING_1 =        300,
@@ -246,10 +280,13 @@ public:
         SCRIPTING_6 =        305,
         SCRIPTING_7 =        306,
         SCRIPTING_8 =        307,
+
+        // this must be higher than any aux function above
+        AUX_FUNCTION_MAX =   308,
     };
     typedef enum AUX_FUNC aux_func_t;
 
-    // auxillary switch handling (n.b.: we store this as 2-bits!):
+    // auxiliary switch handling (n.b.: we store this as 2-bits!):
     enum class AuxSwitchPos : uint8_t {
         LOW,       // indicates auxiliary switch is in the low position (pwm <1200)
         MIDDLE,    // indicates auxiliary switch is in the middle position (pwm >1200, <1800)
@@ -270,8 +307,9 @@ public:
     // wrapper function around do_aux_function which allows us to log
     bool run_aux_function(aux_func_t ch_option, AuxSwitchPos pos, AuxFuncTriggerSource source);
 
-#if !HAL_MINIMIZE_FEATURES
+#if AP_RC_CHANNEL_AUX_FUNCTION_STRINGS_ENABLED
     const char *string_for_aux_function(AUX_FUNC function) const;
+    const char *string_for_aux_pos(AuxSwitchPos pos) const;
 #endif
     // pwm value under which we consider that Radio value is invalid
     static const uint16_t RC_MIN_LIMIT_PWM = 800;
@@ -304,6 +342,12 @@ protected:
     void do_aux_function_avoid_adsb(const AuxSwitchPos ch_flag);
     void do_aux_function_avoid_proximity(const AuxSwitchPos ch_flag);
     void do_aux_function_camera_trigger(const AuxSwitchPos ch_flag);
+    bool do_aux_function_record_video(const AuxSwitchPos ch_flag);
+    bool do_aux_function_camera_zoom(const AuxSwitchPos ch_flag);
+    bool do_aux_function_camera_manual_focus(const AuxSwitchPos ch_flag);
+    bool do_aux_function_camera_auto_focus(const AuxSwitchPos ch_flag);
+    bool do_aux_function_camera_image_tracking(const AuxSwitchPos ch_flag);
+    bool do_aux_function_camera_lens(const AuxSwitchPos ch_flag);
     void do_aux_function_runcam_control(const AuxSwitchPos ch_flag);
     void do_aux_function_runcam_osd_control(const AuxSwitchPos ch_flag);
     void do_aux_function_fence(const AuxSwitchPos ch_flag);
@@ -315,6 +359,7 @@ protected:
     void do_aux_function_relay(uint8_t relay, bool val);
     void do_aux_function_sprayer(const AuxSwitchPos ch_flag);
     void do_aux_function_generator(const AuxSwitchPos ch_flag);
+    void do_aux_function_fft_notch_tune(const AuxSwitchPos ch_flag);
 
     typedef int8_t modeswitch_pos_t;
     virtual void mode_switch_changed(modeswitch_pos_t new_pos) {
@@ -367,7 +412,7 @@ private:
     void read_mode_switch();
     bool debounce_completed(int8_t position);
 
-#if !HAL_MINIMIZE_FEATURES
+#if AP_RC_CHANNEL_AUX_FUNCTION_STRINGS_ENABLED
     // Structure to lookup switch change announcements
     struct LookupTable{
        AUX_FUNC option;
@@ -448,7 +493,7 @@ public:
     void reset_mode_switch();
     virtual void read_mode_switch();
 
-    // has_valid_input should be pure-virtual when Plane is converted
+    virtual bool in_rc_failsafe() const { return true; };
     virtual bool has_valid_input() const { return false; };
 
     virtual RC_Channel *get_arming_channel(void) const { return nullptr; };
@@ -461,56 +506,29 @@ public:
         }
     }
 
-    // should we ignore RC failsafe bits from receivers?
-    bool ignore_rc_failsafe(void) const {
-        return get_singleton() != nullptr && (_options & uint32_t(Option::IGNORE_FAILSAFE));
+    enum class Option {
+        IGNORE_RECEIVER         = (1U << 0), // RC receiver modules
+        IGNORE_OVERRIDES        = (1U << 1), // MAVLink overrides
+        IGNORE_FAILSAFE         = (1U << 2), // ignore RC failsafe bits
+        FPORT_PAD               = (1U << 3), // pad fport telem output
+        LOG_RAW_DATA            = (1U << 4), // log rc input bytes
+        ARMING_CHECK_THROTTLE   = (1U << 5), // run an arming check for neutral throttle
+        ARMING_SKIP_CHECK_RPY   = (1U << 6), // skip the an arming checks for the roll/pitch/yaw channels
+        ALLOW_SWITCH_REV        = (1U << 7), // honor the reversed flag on switches
+        CRSF_CUSTOM_TELEMETRY   = (1U << 8), // use passthrough data for crsf telemetry
+        SUPPRESS_CRSF_MESSAGE   = (1U << 9), // suppress CRSF mode/rate message for ELRS systems
+        MULTI_RECEIVER_SUPPORT  = (1U << 10), // allow multiple receivers
+        USE_CRSF_LQ_AS_RSSI     = (1U << 11), // returns CRSF link quality as RSSI value, instead of RSSI
+        CRSF_FM_DISARM_STAR     = (1U << 12), // when disarmed, add a star at the end of the flight mode in CRSF telemetry
+        ELRS_420KBAUD           = (1U << 13), // use 420kbaud for ELRS protocol
+    };
+
+    bool option_is_enabled(Option option) const {
+        return _options & uint32_t(option);
     }
 
-    // should we add a pad byte to Fport data
-    bool fport_pad(void) const {
-        return get_singleton() != nullptr && (_options & uint32_t(Option::FPORT_PAD));
-    }
-
-    // returns true if we should pass through data for crsf telemetry
-    bool crsf_custom_telemetry(void) const {
-        return get_singleton() != nullptr && (_options & uint32_t(Option::CRSF_CUSTOM_TELEMETRY));
-    }
-
-    // should a channel reverse option affect aux switches
-    bool switch_reverse_allowed(void) const {
-        return get_singleton() != nullptr && (_options & uint32_t(Option::ALLOW_SWITCH_REV));
-    }
-
-    bool ignore_overrides() const {
-        return _options & uint32_t(Option::IGNORE_OVERRIDES);
-    }
-
-    bool ignore_receiver() const {
-        return _options & uint32_t(Option::IGNORE_RECEIVER);
-    }
-
-    bool log_raw_data() const {
-        return _options & uint32_t(Option::LOG_DATA);
-    }
-    
     virtual bool arming_check_throttle() const {
-        return _options & uint32_t(Option::ARMING_CHECK_THROTTLE);
-    }
-
-    bool arming_skip_checks_rpy() const {
-        return _options & uint32_t(Option::ARMING_SKIP_CHECK_RPY);
-    }
-
-    bool suppress_crsf_message(void) const {
-        return get_singleton() != nullptr && (_options & uint32_t(Option::SUPPRESS_CRSF_MESSAGE));
-    }
-
-    bool multiple_receiver_support() const {
-        return _options & uint32_t(Option::MULTI_RECEIVER_SUPPORT);
-    }
-
-    bool use_crsf_lq_as_rssi(void) const {
-        return get_singleton() != nullptr && (_options & uint32_t(Option::USE_CRSF_LQ_AS_RSSI)) != 0;
+        return option_is_enabled(Option::ARMING_CHECK_THROTTLE);
     }
 
     // returns true if overrides should time out.  If true is returned
@@ -533,8 +551,11 @@ public:
     // get mask of enabled protocols
     uint32_t enabled_protocols() const;
 
-    // returns true if we have had a direct detach RC reciever, does not include overrides
+    // returns true if we have had a direct detach RC receiver, does not include overrides
     bool has_had_rc_receiver() const { return _has_had_rc_receiver; }
+
+    // returns true if we have had an override on any channel
+    bool has_had_rc_override() const { return _has_had_override; }
 
     /*
       get the RC input PWM value given a channel number.  Note that
@@ -546,7 +567,7 @@ public:
     uint32_t last_input_ms() const { return last_update_ms; };
 
     // method for other parts of the system (e.g. Button and mavlink)
-    // to trigger auxillary functions
+    // to trigger auxiliary functions
     bool run_aux_function(RC_Channel::AUX_FUNC ch_option, RC_Channel::AuxSwitchPos pos, RC_Channel::AuxFuncTriggerSource source) {
         return rc_channel(0)->run_aux_function(ch_option, pos, source);
     }
@@ -562,25 +583,19 @@ public:
     void calibrating(bool b) { gcs_is_calibrating = b; }
     bool calibrating() { return gcs_is_calibrating; }
 
-protected:
+#if AP_SCRIPTING_ENABLED
+    // get last aux cached value for scripting. Returns false if never set, otherwise 0,1,2
+    bool get_aux_cached(RC_Channel::aux_func_t aux_fn, uint8_t &pos);
+#endif
 
-    enum class Option {
-        IGNORE_RECEIVER         = (1U << 0), // RC receiver modules
-        IGNORE_OVERRIDES        = (1U << 1), // MAVLink overrides
-        IGNORE_FAILSAFE         = (1U << 2), // ignore RC failsafe bits
-        FPORT_PAD               = (1U << 3), // pad fport telem output
-        LOG_DATA                = (1U << 4), // log rc input bytes
-        ARMING_CHECK_THROTTLE   = (1U << 5), // run an arming check for neutral throttle
-        ARMING_SKIP_CHECK_RPY   = (1U << 6), // skip the an arming checks for the roll/pitch/yaw channels
-        ALLOW_SWITCH_REV        = (1U << 7), // honor the reversed flag on switches
-        CRSF_CUSTOM_TELEMETRY   = (1U << 8), // use passthrough data for crsf telemetry
-        SUPPRESS_CRSF_MESSAGE   = (1U << 9), // suppress CRSF mode/rate message for ELRS systems
-        MULTI_RECEIVER_SUPPORT  = (1U << 10), // allow multiple receivers
-        USE_CRSF_LQ_AS_RSSI     = (1U << 11), // returns CRSF link quality as RSSI value, instead of RSSI
-    };
+    // get failsafe timeout in milliseconds
+    uint32_t get_fs_timeout_ms() const { return MAX(_fs_timeout * 1000, 100); }
+
+protected:
 
     void new_override_received() {
         has_new_overrides = true;
+        _has_had_override = true;
     }
 
 private:
@@ -590,11 +605,13 @@ private:
 
     uint32_t last_update_ms;
     bool has_new_overrides;
-    bool _has_had_rc_receiver; // true if we have had a direct detach RC reciever, does not include overrides
+    bool _has_had_rc_receiver; // true if we have had a direct detach RC receiver, does not include overrides
+    bool _has_had_override; // true if we have had an override on any channel
 
     AP_Float _override_timeout;
     AP_Int32  _options;
     AP_Int32  _protocols;
+    AP_Float _fs_timeout;
 
     RC_Channel *flight_mode_channel() const;
 
@@ -603,6 +620,17 @@ private:
 
     // true if GCS is performing a RC calibration
     bool gcs_is_calibrating;
+
+#if AP_SCRIPTING_ENABLED
+    // bitmask of last aux function value, 2 bits per function
+    // value 0 means never set, otherwise level+1
+    HAL_Semaphore aux_cache_sem;
+    Bitmask<unsigned(RC_Channel::AUX_FUNC::AUX_FUNCTION_MAX)*2> aux_cached;
+
+    void set_aux_cached(RC_Channel::aux_func_t aux_fn, RC_Channel::AuxSwitchPos pos);
+#endif
 };
 
 RC_Channels &rc();
+
+#endif  // AP_RC_CHANNEL_ENABLED

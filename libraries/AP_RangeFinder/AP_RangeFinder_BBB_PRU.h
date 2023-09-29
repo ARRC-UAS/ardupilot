@@ -1,8 +1,10 @@
 #pragma once
 
-#include "AP_RangeFinder.h"
-#include "AP_RangeFinder_Backend.h"
+#include "AP_RangeFinder_config.h"
 
+#if AP_RANGEFINDER_BBB_PRU_ENABLED
+
+#include "AP_RangeFinder_Backend.h"
 
 #define PRU0_CTRL_BASE 0x4a322000
 
@@ -43,3 +45,5 @@ protected:
 private:
 
 };
+
+#endif  // AP_RANGEFINDER_BBB_PRU_ENABLED

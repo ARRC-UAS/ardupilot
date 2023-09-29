@@ -1,7 +1,12 @@
 #pragma once
 
+#include "AP_RangeFinder_config.h"
+
+#if AP_RANGEFINDER_HC_SR04_ENABLED
+
 #include "AP_RangeFinder.h"
 #include "AP_RangeFinder_Backend.h"
+
 #include "AP_RangeFinder_Params.h"
 
 class AP_RangeFinder_HC_SR04 : public AP_RangeFinder_Backend
@@ -37,3 +42,5 @@ private:
 
     uint32_t last_ping_ms;
 };
+
+#endif  // AP_RANGEFINDER_HC_SR04_ENABLED

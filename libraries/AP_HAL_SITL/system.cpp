@@ -52,7 +52,7 @@ void WEAK panic(const char *errormsg, ...)
 }
 
 // partly flogged from: https://github.com/tridge/junkcode/blob/master/segv_handler/segv_handler.c
-void run_command_on_ownpid(const char *commandname)
+static void run_command_on_ownpid(const char *commandname)
 {
     // find dumpstack command:
     const char *command_filepath = commandname; // if we can't find it trust in PATH
@@ -192,46 +192,5 @@ uint64_t millis64()
                            (state.start_time.tv_usec*1.0e-6)));
     return ret;
 }
-
-
-uint32_t native_micros()
-{
-    return native_micros64() & 0xFFFFFFFF;
-}
-
-uint32_t native_millis()
-{
-    return native_millis64() & 0xFFFFFFFF;
-}
-
-/*
-  we define a millis16() here to avoid an issue with sitl builds in cygwin
- */
-uint16_t native_millis16()
-{
-    return native_millis64() & 0xFFFF;
-}
-    
-
-uint64_t native_micros64()
-{
-    struct timeval tp;
-    gettimeofday(&tp, nullptr);
-    uint64_t ret = 1.0e6 * ((tp.tv_sec + (tp.tv_usec * 1.0e-6)) -
-                            (state.start_time.tv_sec +
-                             (state.start_time.tv_usec * 1.0e-6)));
-    return ret;
-}
-
-uint64_t native_millis64()
-{
-    struct timeval tp;
-    gettimeofday(&tp, nullptr);
-    uint64_t ret = 1.0e3*((tp.tv_sec + (tp.tv_usec*1.0e-6)) -
-                          (state.start_time.tv_sec +
-                           (state.start_time.tv_usec*1.0e-6)));
-    return ret;
-}
-
 
 } // namespace AP_HAL

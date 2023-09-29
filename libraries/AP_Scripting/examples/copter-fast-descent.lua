@@ -44,17 +44,12 @@ assert(param:add_param(PARAM_TABLE_KEY, 5, 'SPEED_DN', 10), 'could not add FDST_
 assert(param:add_param(PARAM_TABLE_KEY, 6, 'YAW_BEHAVE', 0), 'could not add FDST_YAW_BEHAVE param') -- 0:yaw does not change 1:yaw points toward center
 
 -- bind parameters to variables
-function bind_param(name)
-   local p = Parameter()
-   assert(p:init(name), string.format('could not find %s parameter', name))
-   return p
-end
-local activate_type = bind_param("FDST_ACTIVATE")       -- activate type 0:Guided, 1:Auto's NAV_SCRIPT_TIME
-local alt_above_home_min = bind_param("FDST_ALT_MIN")   -- copter will stop at this altitude above home
-local circle_radius_max = bind_param("FDST_RADIUS")     -- target circle's maximum radius
-local speed_xy_max = bind_param("FDST_SPEED_XY")        -- max target horizontal speed
-local speed_z_max = bind_param("FDST_SPEED_DN")         -- target descent rate
-local yaw_behave = bind_param("FDST_YAW_BEHAVE")        -- 0:yaw is static, 1:yaw points towards center of circle
+local activate_type = Parameter("FDST_ACTIVATE")       -- activate type 0:Guided, 1:Auto's NAV_SCRIPT_TIME
+local alt_above_home_min = Parameter("FDST_ALT_MIN")   -- copter will stop at this altitude above home
+local circle_radius_max = Parameter("FDST_RADIUS")     -- target circle's maximum radius
+local speed_xy_max = Parameter("FDST_SPEED_XY")        -- max target horizontal speed
+local speed_z_max = Parameter("FDST_SPEED_DN")         -- target descent rate
+local yaw_behave = Parameter("FDST_YAW_BEHAVE")        -- 0:yaw is static, 1:yaw points towards center of circle
 
 -- the main update function
 function update()
@@ -88,7 +83,7 @@ function update()
     end
   else
     -- activate_type 1: reset stage when disarmed or not in Auto executing NAV_SCRIPT_TIME command
-    auto_last_id, cmd, arg1, arg2 = vehicle:nav_script_time()
+    auto_last_id, cmd, arg1, arg2, arg3, arg4 = vehicle:nav_script_time()
     if not arming:is_armed() or not auto_last_id then 
       stage = 0
       if (update_user and arming:is_armed()) then
@@ -136,25 +131,28 @@ function update()
       speed_xy = math.max(speed_xy - (accel_xy * dt), 0)  -- decelerate horizontal speed to zero
       speed_z = math.max(speed_z - (accel_z * dt), 0)     -- decelerate vertical speed to zero
     else
-      -- determine if below slowdown point
-      local slowdown = false
-      local stopping_distance_z = 0.5 * speed_z_max:get() * speed_z_max:get() / accel_z
-      if (rel_pos_home_NED) then
-        if (-rel_pos_home_NED:z() <= alt_above_home_min:get() + stopping_distance_z) then
-          slowdown = true
-        end
+      -- calculate conversion between alt-above-home and alt-above-ekf-origin
+      local home_alt_above_origin = 0
+      local home = ahrs:get_home()
+      local ekf_origin = ahrs:get_origin()
+      if home and ekf_origin then
+        local dist_NED = home:get_distance_NED(ekf_origin)
+        home_alt_above_origin = dist_NED:z()
       end
 
-      if (slowdown) then
-        -- slow down vertical and then horizontal speed
-        speed_z = math.max(speed_z - (accel_z * dt), math.min(speed_z_slowdown, speed_z_max:get())) -- decelerate to 0.1m/s vertically
-        if speed_z <= speed_z_slowdown then
-          speed_xy = math.max(speed_xy - (accel_xy * dt), 0)
-        end
+      -- calculate target speeds
+      local target_dist_to_alt_min = -target_alt_D - home_alt_above_origin - alt_above_home_min:get()  -- alt target's distance to alt_min
+      if (target_dist_to_alt_min > 0) then
+        local speed_z_limit = speed_z_max:get()
+        speed_z_limit = math.min(speed_z_limit, math.sqrt(2.0 * target_dist_to_alt_min * accel_z))  -- limit speed so vehicle can stop at ALT_MIN
+        speed_z_limit = math.max(speed_z_limit, speed_z_slowdown) -- vertical speed should never be less than 0.1 m/s when above ALT_MIN
+        speed_z = math.min(speed_z + (accel_z * dt), speed_z_limit)
+
+        speed_xy = math.min(speed_xy + (accel_xy * dt), speed_xy_max:get()) -- accelerate horizontal speed to maximum
       else
-        -- normal speed
-        speed_xy = math.min(speed_xy + (accel_xy * dt), speed_xy_max:get())   -- accelerate horizontal speed to max
-        speed_z = math.min(speed_z + (accel_z * dt), speed_z_max:get())       -- accelerate to max descent rate
+        -- below alt min so decelerate target speeds to zero
+        speed_xy = math.max(speed_xy - (accel_xy * dt), 0)  -- decelerate horizontal speed to zero
+        speed_z = math.max(speed_z - (accel_z * dt), 0)     -- decelerate vertical speed to zero
       end
     end
 
@@ -205,9 +203,9 @@ function update()
     -- send targets to vehicle with yaw target
     vehicle:set_target_posvelaccel_NED(target_pos, target_vel, target_accel, true, target_yaw_deg, false, 0, false)
 
-    -- advance to stage 2 when below target altitude
+    -- advance to stage 2 when below target altitude and target speeds are zero
     if (rel_pos_home_NED) then 
-      if (-rel_pos_home_NED:z() <= alt_above_home_min:get()) then
+      if (-rel_pos_home_NED:z() <= alt_above_home_min:get() and (speed_xy==0) and (speed_z==0)) then
         stage = stage + 1
       end
       if (update_user) then

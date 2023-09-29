@@ -49,22 +49,6 @@ Location::Location(const Vector3f &ekf_offset_neu, AltFrame frame)
     }
 }
 
-Location::Location(const Vector3d &ekf_offset_neu, AltFrame frame)
-{
-    zero();
-
-    // store alt and alt frame
-    set_alt_cm(ekf_offset_neu.z, frame);
-
-    // calculate lat, lon
-    Location ekf_origin;
-    if (AP::ahrs().get_origin(ekf_origin)) {
-        lat = ekf_origin.lat;
-        lng = ekf_origin.lng;
-        offset(ekf_offset_neu.x * 0.01, ekf_offset_neu.y * 0.01);
-    }
-}
-
 void Location::set_alt_cm(int32_t alt_cm, AltFrame frame)
 {
     alt = alt_cm;
@@ -219,12 +203,9 @@ bool Location::get_vector_xy_from_origin_NE(Vector2f &vec_ne) const
 bool Location::get_vector_from_origin_NEU(Vector3f &vec_neu) const
 {
     // convert lat, lon
-    Vector2f vec_ne;
-    if (!get_vector_xy_from_origin_NE(vec_ne)) {
+    if (!get_vector_xy_from_origin_NE(vec_neu.xy())) {
         return false;
     }
-    vec_neu.x = vec_ne.x;
-    vec_neu.y = vec_ne.y;
 
     // convert altitude
     int32_t alt_above_origin_cm = 0;
@@ -236,8 +217,8 @@ bool Location::get_vector_from_origin_NEU(Vector3f &vec_neu) const
     return true;
 }
 
-// return distance in meters between two locations
-ftype Location::get_distance(const struct Location &loc2) const
+// return horizontal distance in meters between two locations
+ftype Location::get_distance(const Location &loc2) const
 {
     ftype dlat = (ftype)(loc2.lat - lat);
     ftype dlng = ((ftype)diff_longitude(loc2.lng,lng)) * longitude_scale((lat+loc2.lat)/2);
@@ -245,7 +226,7 @@ ftype Location::get_distance(const struct Location &loc2) const
 }
 
 // return the altitude difference in meters taking into account alt frame.
-bool Location::get_alt_distance(const struct Location &loc2, ftype &distance) const
+bool Location::get_alt_distance(const Location &loc2, ftype &distance) const
 {
     int32_t alt1, alt2;
     if (!get_alt_cm(AltFrame::ABSOLUTE, alt1) || !loc2.get_alt_cm(AltFrame::ABSOLUTE, alt2)) {
@@ -307,6 +288,14 @@ void Location::offset_latlng(int32_t &lat, int32_t &lng, ftype ofs_north, ftype 
 void Location::offset(ftype ofs_north, ftype ofs_east)
 {
     offset_latlng(lat, lng, ofs_north, ofs_east);
+}
+
+// extrapolate latitude/longitude given distances (in meters) north
+// and east. Note that this is metres, *even for the altitude*.
+void Location::offset(const Vector3p &ofs_ned)
+{
+    offset_latlng(lat, lng, ofs_ned.x, ofs_ned.y);
+    alt += -ofs_ned.z * 100;  // m -> cm
 }
 
 /*
@@ -377,7 +366,7 @@ assert_storage_size<Location, 16> _assert_storage_size_Location;
 
 
 // return bearing in radians from location to loc2, return is 0 to 2*Pi
-ftype Location::get_bearing(const struct Location &loc2) const
+ftype Location::get_bearing(const Location &loc2) const
 {
     const int32_t off_x = diff_longitude(loc2.lng,lng);
     const int32_t off_y = (loc2.lat - lat) / loc2.longitude_scale((lat+loc2.lat)/2);
@@ -394,6 +383,20 @@ ftype Location::get_bearing(const struct Location &loc2) const
 bool Location::same_latlon_as(const Location &loc2) const
 {
     return (lat == loc2.lat) && (lng == loc2.lng);
+}
+
+bool Location::same_alt_as(const Location &loc2) const
+{
+    // fast path if the altitude frame is the same
+    if (this->get_alt_frame() == loc2.get_alt_frame()) {
+        return this->alt == loc2.alt;
+    }
+
+    ftype alt_diff;
+    bool have_diff = this->get_alt_distance(loc2, alt_diff);
+
+    const ftype tolerance = FLT_EPSILON;
+    return have_diff && (fabsF(alt_diff) < tolerance);
 }
 
 // return true when lat and lng are within range

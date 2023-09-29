@@ -19,6 +19,10 @@
 #pragma once
 
 #include "AC_AutoTune.h"
+#include <AP_Math/chirp.h>
+#include <GCS_MAVLink/GCS.h>
+
+#include <AP_Scheduler/AP_Scheduler.h>
 
 class AC_AutoTune_Heli : public AC_AutoTune
 {
@@ -40,6 +44,9 @@ protected:
 
     // backup original gains and prepare for start of tuning
     void backup_gains_and_initialise() override;
+
+    // load gains
+    void load_gain_set(AxisType s_axis, float rate_p, float rate_i, float rate_d, float rate_ff, float angle_p, float max_accel, float rate_fltt, float rate_flte, float smax);
 
     // switch to use original gains
     void load_orig_gains() override;
@@ -136,20 +143,22 @@ private:
     // max gain data for rate d tuning
     max_gain_data max_rate_d;
 
+    // dwell type identifies whether the dwell is ran on rate or angle
+    enum DwellType {
+        RATE    = 0,
+        ANGLE   = 1,
+        DRB     = 2,
+    };
+
     // Feedforward test used to determine Rate FF gain
     void rate_ff_test_init();
     void rate_ff_test_run(float max_angle_cds, float target_rate_cds, float dir_sign);
 
+    // initialize dwell test or angle dwell test variables
+    void dwell_test_init(float start_frq, float stop_frq, float filt_freq, DwellType dwell_type);
+
     // dwell test used to perform frequency dwells for rate gains
-    void dwell_test_init(float start_frq, float filt_freq);
-    void dwell_test_run(uint8_t freq_resp_input, float start_frq, float stop_frq, float &dwell_gain, float &dwell_phase);
-
-    // dwell test used to perform frequency dwells for angle gains
-    void angle_dwell_test_init(float start_frq, float filt_freq);
-    void angle_dwell_test_run(float start_frq, float stop_frq, float &dwell_gain, float &dwell_phase);
-
-    // generates waveform for frequency sweep excitations
-    float waveform(float time, float time_record, float waveform_magnitude, float wMin, float wMax);
+    void dwell_test_run(uint8_t freq_resp_input, float start_frq, float stop_frq, float &dwell_gain, float &dwell_phase, DwellType dwell_type);
 
     // updating_rate_ff_up - adjust FF to ensure the target is reached
     // FF is adjusted until rate requested is acheived
@@ -234,7 +243,6 @@ private:
     Vector3f start_angles;                          // aircraft attitude at the start of test
     uint32_t settle_time;                           // time in ms for allowing aircraft to stabilize before initiating test
     uint32_t phase_out_time;                        // time in ms to phase out response
-    float    waveform_freq_rads;                    //current frequency for chirp waveform
     float    trim_pff_out;                          // trim output of the PID rate controller for P, I and FF terms
     float    trim_meas_rate;                        // trim measured gyro rate
 
@@ -271,6 +279,10 @@ private:
     };
     sweep_data sweep;
 
+    // fix the frequency sweep time to 23 seconds
+    const float sweep_time_ms = 23000;
+
+
     // parameters
     AP_Int8  axis_bitmask;        // axes to be tuned
     AP_Int8  seq_bitmask;       // tuning sequence bitmask
@@ -279,8 +291,8 @@ private:
     AP_Float max_resp_gain;     // maximum response gain
     AP_Float vel_hold_gain;     // gain for velocity hold
 
-    // freqresp object for the rate frequency response tests
-    AC_AutoTune_FreqResp freqresp_rate;
-    // freqresp object for the angle frequency response tests
-    AC_AutoTune_FreqResp freqresp_angle;
+    // freqresp object for the frequency response tests
+    AC_AutoTune_FreqResp freqresp;
+
+    Chirp chirp_input;
 };

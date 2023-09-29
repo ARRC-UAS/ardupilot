@@ -1,3 +1,8 @@
+#include "GCS_config.h"
+#include <AC_Fence/AC_Fence_config.h>
+
+#if HAL_GCS_ENABLED && AP_FENCE_ENABLED
+
 #include "MissionItemProtocol_Fence.h"
 
 #include <AC_Fence/AC_Fence.h>
@@ -228,7 +233,7 @@ MAV_MISSION_RESULT MissionItemProtocol_Fence::allocate_receive_resources(const u
 MAV_MISSION_RESULT MissionItemProtocol_Fence::allocate_update_resources()
 {
     const uint16_t _item_count = _fence.polyfence().num_stored_items();
-    _updated_mask = new uint8_t[(_item_count+7/8)];
+    _updated_mask = new uint8_t[(_item_count+7)/8];
     if (_updated_mask == nullptr) {
         return MAV_MISSION_ERROR;
     }
@@ -241,3 +246,5 @@ MAV_MISSION_RESULT MissionItemProtocol_Fence::allocate_update_resources()
     _new_items_count = _item_count;
     return MAV_MISSION_ACCEPTED;
 }
+
+#endif // HAL_GCS_ENABLED && AP_FENCE_ENABLED

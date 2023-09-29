@@ -27,75 +27,67 @@ using namespace Linux;
 
 UtilRPI::UtilRPI()
 {
-    _check_rpi_version();
+    _get_board_type_using_peripheral_base ();
 }
 
-int UtilRPI::_check_rpi_version()
+
+// 
+// previous appraoch was using /proc/device-tree/system/linux,revision
+// now we use /proc/device-tree/soc/ranges see: https://forums.raspberrypi.com//viewtopic.php?t=244031
+void UtilRPI::_get_board_type_using_peripheral_base() 
 {
-    const unsigned int MAX_SIZE_LINE = 50;
-    char buffer[MAX_SIZE_LINE];
-    int hw;
-
-    memset(buffer, 0, MAX_SIZE_LINE);
-    FILE *f = fopen("/sys/firmware/devicetree/base/model", "r");
-    if (f != nullptr && fgets(buffer, MAX_SIZE_LINE, f) != nullptr) {
-        fclose(f);
-        
-        int ret = strncmp(buffer, "Raspberry Pi Compute Module 4", 28);
-        if (ret == 0) {
-             _rpi_version = 4; // compute module 4 e.g. Raspberry Pi Compute Module 4 Rev 1.0.
-             printf("%s. (intern: %d)\n", buffer, _rpi_version);
-             return _rpi_version;
+    FILE *fp;
+    uint32_t base=0x00;
+    unsigned char buf[32];
+    _linux_board_version = LINUX_BOARD_TYPE::UNKNOWN_BOARD;
+    fp = fopen("/proc/device-tree/soc/ranges" , "rb");
+    if (fp) {
+        const uint16_t len = fread(buf, 1, sizeof(buf), fp);
+        if (len >= 8) {
+            base = buf[4]<<24 | buf[5]<<16 | buf[6]<<8 | buf[7];
+            if (!base)
+                base = buf[8]<<24 | buf[9]<<16 | buf[10]<<8 | buf[11];
+            if (!base)
+                base = buf[8]<<24 | buf[9]<<16 | buf[10]<<8 | buf[11];
+            if (!base && (len>15))
+                base = buf[12]<<24 | buf[13]<<16 | buf[14]<<8 | buf[15];
+            
         }
-        
-        ret = strncmp(buffer, "Raspberry Pi Zero 2", 19);
-        if (ret == 0) {
-             _rpi_version = 2; // Raspberry PI Zero 2 W e.g. Raspberry Pi Zero 2 Rev 1.0.
-             printf("%s. (intern: %d)\n", buffer, _rpi_version);
-             return _rpi_version;
-        }
-        
-        ret = sscanf(buffer + 12, "%d", &_rpi_version);
-        if (ret != EOF) {
-            if (_rpi_version > 3)  {
-                _rpi_version = 4;
-            } else if (_rpi_version > 2) {
-                // Preserving old behavior.
-                _rpi_version = 2;
-            } else if (_rpi_version == 0) {
-                // RPi 1 doesn't have a number there, so sscanf() won't have read anything.
-                _rpi_version = 1;
-            }
-
-            printf("%s. (intern: %d)\n", buffer, _rpi_version);
-
-            return _rpi_version;
-        }
+        fclose(fp);
     }
 
-    // Attempting old method if the version couldn't be read with the new one.
-    hw = Util::from(hal.util)->get_hw_arm32();
-
-    if (hw == UTIL_HARDWARE_RPI4) {
-        printf("Raspberry Pi 4 with BCM2711!\n");
-        _rpi_version = 4;
-    } else if (hw == UTIL_HARDWARE_RPI2) {
-        printf("Raspberry Pi 2/3 with BCM2709!\n");
-        _rpi_version = 2;
-    } else if (hw == UTIL_HARDWARE_RPI1) {
-        printf("Raspberry Pi 1 with BCM2708!\n");
-        _rpi_version = 1;
-    } else {
-        /* defaults to RPi version 2/3 */
-        fprintf(stderr, "Could not detect RPi version, defaulting to 2/3\n");
-        _rpi_version = 2;
+    switch (base) {
+        case 0x0:
+            _linux_board_version = LINUX_BOARD_TYPE::UNKNOWN_BOARD;
+            printf("Cannot detect board-type \r\n");
+        break;
+        case 0x20000000:
+            _linux_board_version = LINUX_BOARD_TYPE::RPI_ZERO_1;
+            printf("RPI Zero / 1 \r\n");
+            printf("Peripheral base address is %x\n", base);
+        break;
+        case 0x3f000000:
+            _linux_board_version = LINUX_BOARD_TYPE::RPI_2_3_ZERO2;
+            printf("RPI 2, 3 or Zero-2 \r\n");
+            printf("Peripheral base address is %x\n", base);
+        break;
+        case 0xfe000000:
+            _linux_board_version = LINUX_BOARD_TYPE::RPI_4;
+            printf("RPI 4 \r\n");
+            printf("Peripheral base address is %x\n", base);
+        break;
+        case 0x40000000:
+            _linux_board_version = LINUX_BOARD_TYPE::ALLWINNWER_H616;
+            printf("AllWinner-H616 \r\n");
+        break;
     }
-    return _rpi_version;
+
+    return ;
 }
 
-int UtilRPI::get_rpi_version() const
+LINUX_BOARD_TYPE UtilRPI::detect_linux_board_type() const
 {
-    return _rpi_version;
+    return _linux_board_version;
 }
 
 #endif

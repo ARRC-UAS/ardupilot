@@ -7,8 +7,6 @@ define STM32F107_MCUCONF
 
 define HAL_BOARD_AP_PERIPH_ZUBAXGNSS
 
-define CAN_APP_NODE_NAME "org.ardupilot.ap_periph_ZubaxGNSS"
-
 # bootloader starts firmware at 34k
 FLASH_RESERVE_START_KB 34
 
@@ -119,8 +117,6 @@ define HAL_UART_MIN_RX_SIZE 128
 
 define HAL_UART_STACK_SIZE 256
 define STORAGE_THD_WA_SIZE 512
-
-define HAL_MINIMIZE_FEATURES 0
 
 
 define HAL_I2C_CLEAR_ON_TIMEOUT 0

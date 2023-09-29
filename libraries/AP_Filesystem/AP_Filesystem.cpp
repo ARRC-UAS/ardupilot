@@ -15,41 +15,43 @@
 
 #include "AP_Filesystem.h"
 
+#include "AP_Filesystem_config.h"
+#include <AP_HAL/HAL.h>
+#include <AP_HAL/Util.h>
+
 static AP_Filesystem fs;
 
-#if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
-#if HAVE_FILESYSTEM_SUPPORT
+// create exactly one "local" filesystem:
+#if AP_FILESYSTEM_FATFS_ENABLED
 #include "AP_Filesystem_FATFS.h"
 static AP_Filesystem_FATFS fs_local;
+#elif AP_FILESYSTEM_ESP32_ENABLED
+#include "AP_Filesystem_ESP32.h"
+static AP_Filesystem_ESP32 fs_local;
+#elif AP_FILESYSTEM_POSIX_ENABLED
+#include "AP_Filesystem_posix.h"
+static AP_Filesystem_Posix fs_local;
 #else
 static AP_Filesystem_Backend fs_local;
 int errno;
-#endif // HAVE_FILESYSTEM_SUPPORT
-#endif // HAL_BOARD_CHIBIOS
-
-#if CONFIG_HAL_BOARD == HAL_BOARD_ESP32
-#include "AP_Filesystem_ESP32.h"
-static AP_Filesystem_ESP32 fs_local;
-#endif // HAL_BOARD_ESP32
-
-#if CONFIG_HAL_BOARD == HAL_BOARD_LINUX || CONFIG_HAL_BOARD == HAL_BOARD_SITL
-#include "AP_Filesystem_posix.h"
-static AP_Filesystem_Posix fs_local;
 #endif
 
-#ifdef HAL_HAVE_AP_ROMFS_EMBEDDED_H
+#if AP_FILESYSTEM_ROMFS_ENABLED
 #include "AP_Filesystem_ROMFS.h"
 static AP_Filesystem_ROMFS fs_romfs;
 #endif
 
+#if AP_FILESYSTEM_PARAM_ENABLED
 #include "AP_Filesystem_Param.h"
 static AP_Filesystem_Param fs_param;
+#endif
 
+#if AP_FILESYSTEM_SYS_ENABLED
 #include "AP_Filesystem_Sys.h"
 static AP_Filesystem_Sys fs_sys;
+#endif
 
-#include <AP_Mission/AP_Mission.h>
-#if HAL_MISSION_ENABLED
+#if AP_FILESYSTEM_MISSION_ENABLED
 #include "AP_Filesystem_Mission.h"
 static AP_Filesystem_Mission fs_mission;
 #endif
@@ -59,13 +61,17 @@ static AP_Filesystem_Mission fs_mission;
  */
 const AP_Filesystem::Backend AP_Filesystem::backends[] = {
     { nullptr, fs_local },
-#ifdef HAL_HAVE_AP_ROMFS_EMBEDDED_H
+#if AP_FILESYSTEM_ROMFS_ENABLED
     { "@ROMFS/", fs_romfs },
 #endif
+#if AP_FILESYSTEM_PARAM_ENABLED
     { "@PARAM/", fs_param },
+#endif
+#if AP_FILESYSTEM_SYS_ENABLED
     { "@SYS/", fs_sys },
     { "@SYS", fs_sys },
-#if HAL_MISSION_ENABLED
+#endif
+#if AP_FILESYSTEM_MISSION_ENABLED
     { "@MISSION/", fs_mission },
 #endif
 };
@@ -106,10 +112,10 @@ const AP_Filesystem::Backend &AP_Filesystem::backend_by_fd(int &fd) const
     return backends[idx];
 }
 
-int AP_Filesystem::open(const char *fname, int flags)
+int AP_Filesystem::open(const char *fname, int flags, bool allow_absolute_paths)
 {
     const Backend &backend = backend_by_path(fname);
-    int fd = backend.fs.open(fname, flags);
+    int fd = backend.fs.open(fname, flags, allow_absolute_paths);
     if (fd < 0) {
         return -1;
     }
@@ -170,6 +176,12 @@ int AP_Filesystem::mkdir(const char *pathname)
 {
     const Backend &backend = backend_by_path(pathname);
     return backend.fs.mkdir(pathname);
+}
+
+int AP_Filesystem::rename(const char *oldpath, const char *newpath)
+{
+    const Backend &backend = backend_by_path(oldpath);
+    return backend.fs.rename(oldpath, newpath);
 }
 
 AP_Filesystem::DirHandle *AP_Filesystem::opendir(const char *pathname)
@@ -274,18 +286,20 @@ bool AP_Filesystem::fgets(char *buf, uint8_t buflen, int fd)
     return true;
 }
 
+#if AP_FILESYSTEM_FORMAT_ENABLED
 // format filesystem
 bool AP_Filesystem::format(void)
 {
-#if AP_FILESYSTEM_FORMAT_ENABLED
     if (hal.util->get_soft_armed()) {
         return false;
     }
     return LOCAL_BACKEND.fs.format();
-#else
-    return false;
-#endif
 }
+AP_Filesystem_Backend::FormatStatus AP_Filesystem::get_format_status(void) const
+{
+    return LOCAL_BACKEND.fs.get_format_status();
+}
+#endif
 
 namespace AP
 {

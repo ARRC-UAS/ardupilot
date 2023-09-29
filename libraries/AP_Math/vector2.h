@@ -89,6 +89,11 @@ struct Vector2
     // dot product
     T operator *(const Vector2<T> &v) const;
 
+    // dot product (same as above but a more easily understood name)
+    T dot(const Vector2<T> &v) const {
+        return *this * v;
+    }
+
     // cross product
     T operator %(const Vector2<T> &v) const;
 
@@ -156,7 +161,7 @@ struct Vector2
     void project(const Vector2<T> &v);
 
     // returns this vector projected onto v
-    Vector2<T> projected(const Vector2<T> &v);
+    Vector2<T> projected(const Vector2<T> &v) const;
 
     // adjust position by a given bearing (in degrees) and distance
     void offset_bearing(T bearing, T distance);

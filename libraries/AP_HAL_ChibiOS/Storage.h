@@ -30,7 +30,11 @@
 // when using flash storage we use a small line size to make storage
 // compact and minimise the number of erase cycles needed
 #ifdef STORAGE_FLASH_PAGE
+#if defined(STM32H7XX)
+#define CH_STORAGE_LINE_SHIFT 4
+#else
 #define CH_STORAGE_LINE_SHIFT 3
+#endif
 #elif defined(USE_POSIX) && !defined(HAL_WITH_RAMTRON)
 #define CH_STORAGE_LINE_SHIFT 9
 #else
@@ -75,7 +79,7 @@ private:
     bool _flash_read_data(uint8_t sector, uint32_t offset, uint8_t *data, uint16_t length);
     bool _flash_erase_sector(uint8_t sector);
     bool _flash_erase_ok(void);
-    uint8_t _flash_page;
+    uint16_t _flash_page;
     bool _flash_failed;
     uint32_t _last_re_init_ms;
     uint32_t _last_empty_ms;

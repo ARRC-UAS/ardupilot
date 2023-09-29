@@ -1,7 +1,11 @@
 #pragma once
 
-#include "AP_RangeFinder.h"
+#include "AP_RangeFinder_config.h"
+
+#if AP_RANGEFINDER_BENEWAKE_ENABLED
+
 #include "AP_RangeFinder_Backend_Serial.h"
+#include "AP_RangeFinder.h"
 
 class AP_RangeFinder_Benewake : public AP_RangeFinder_Backend_Serial
 {
@@ -28,3 +32,5 @@ private:
     uint8_t linebuf[10];
     uint8_t linebuf_len;
 };
+
+#endif  // AP_RANGEFINDER_BENEWAKE_ENABLED

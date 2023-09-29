@@ -1,3 +1,8 @@
+#include "GCS_config.h"
+#include <AC_Fence/AC_Fence_config.h>
+
+#if HAL_GCS_ENABLED && AP_FENCE_ENABLED
+
 #include "GCS.h"
 
 #include <AC_Fence/AC_Fence.h>
@@ -31,6 +36,7 @@ MAV_RESULT GCS_MAVLINK::handle_command_do_fence_enable(const mavlink_command_lon
     }
 }
 
+#if AC_POLYFENCE_FENCE_POINT_PROTOCOL_SUPPORT
 void GCS_MAVLINK::handle_fence_message(const mavlink_message_t &msg)
 {
     AC_Fence *fence = AP::fence();
@@ -50,6 +56,7 @@ void GCS_MAVLINK::handle_fence_message(const mavlink_message_t &msg)
         break;
     }
 }
+#endif  // AC_POLYFENCE_FENCE_POINT_PROTOCOL_SUPPORT
 
 // fence_send_mavlink_status - send fence status to ground station
 void GCS_MAVLINK::send_fence_status() const
@@ -96,3 +103,5 @@ void GCS_MAVLINK::send_fence_status() const
                                   fence->get_breach_time(),
                                   breach_mitigation);
 }
+
+#endif  // HAL_GCS_ENABLED && AP_FENCE_ENABLED

@@ -2,6 +2,10 @@
 
 extern const AP_HAL::HAL &hal;
 
+uint32_t AP_HAL::RCOutput::DSHOT_BIT_WIDTH_TICKS = DSHOT_BIT_WIDTH_TICKS_DEFAULT;
+uint32_t AP_HAL::RCOutput::DSHOT_BIT_0_TICKS = DSHOT_BIT_0_TICKS_DEFAULT;
+uint32_t AP_HAL::RCOutput::DSHOT_BIT_1_TICKS = DSHOT_BIT_1_TICKS_DEFAULT;
+
 // helper function for implementation of get_output_mode_banner
 const char* AP_HAL::RCOutput::get_output_mode_string(enum output_mode out_mode) const
 {
@@ -72,39 +76,30 @@ bool AP_HAL::RCOutput::is_dshot_protocol(const enum output_mode mode)
 /*
  * calculate the prescaler required to achieve the desire bitrate
  */
-uint32_t AP_HAL::RCOutput::calculate_bitrate_prescaler(uint32_t timer_clock, uint32_t target_frequency, bool is_dshot)
+uint32_t AP_HAL::RCOutput::calculate_bitrate_prescaler(uint32_t timer_clock, uint32_t target_frequency, bool at_least_freq)
 {
-    uint32_t prescaler;
-    if (is_dshot) {
-        // original prescaler calculation from betaflight. bi-dir dshot is incredibly sensitive to the bitrate
-        prescaler = uint32_t(lrintf((float) timer_clock / target_frequency + 0.01f) - 1);
-    } else {
-        // adjust frequency to give an allowed value given the clock, erring on the high side
-        prescaler = timer_clock / target_frequency;
-        while ((timer_clock / prescaler) < target_frequency && prescaler > 1) {
-            prescaler--;
-        }
+    if (target_frequency > timer_clock) {
+        // we can't achieve the desired frequency
+        return 0;
     }
 
-    const uint32_t freq = timer_clock / prescaler;
-    // if using dshot then always pick the high value. choosing low seems to not agree with some
-    // ESCs despite the fact that BLHeli32 is supposed not to care what the bitrate is
-    if (is_dshot) {
-        if (freq < target_frequency) {
-            prescaler--;
-        }
-    } else {
-        // find the closest value
-        const float delta = fabsf(float(freq) - target_frequency);
-        if (freq > target_frequency
-            && delta > fabsf(float(timer_clock / (prescaler+1)) - target_frequency)) {
-            prescaler++;
-        } else if (freq < target_frequency
-            && delta > fabsf(float(timer_clock / (prescaler-1)) - target_frequency)) {
-            prescaler--;
-        }
+    uint32_t prescaler;
+
+    if (at_least_freq) { // choose a frequency of at least the target, needed by BLHeli_S
+        prescaler = uint32_t(floorf((float) timer_clock / target_frequency + 0.01f) - 1);
+    } else { // original prescaler calculation from betaflight, chooses closest
+        // bi-dir dshot is incredibly sensitive to the bitrate
+        prescaler = uint32_t(lrintf((float) timer_clock / target_frequency + 0.01f) - 1);
     }
 
     return prescaler;
+}
+
+/*
+  returns the pwm value scaled to [-1;1] regrading to set_esc_scaling ranges range without constraints.
+*/
+float AP_HAL::RCOutput::scale_esc_to_unity(uint16_t pwm) const
+{
+    return 2.0 * ((float) pwm - _esc_pwm_min) / (_esc_pwm_max - _esc_pwm_min) - 1.0;
 }
 

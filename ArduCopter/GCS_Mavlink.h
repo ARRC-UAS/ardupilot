@@ -1,6 +1,11 @@
 #pragma once
 
 #include <GCS_MAVLink/GCS.h>
+#include <AP_Winch/AP_Winch_config.h>
+
+#ifndef AC_MAVLINK_SOLO_BUTTON_COMMAND_HANDLING_ENABLED
+#define AC_MAVLINK_SOLO_BUTTON_COMMAND_HANDLING_ENABLED 1
+#endif
 
 class GCS_MAVLINK_Copter : public GCS_MAVLINK
 {
@@ -21,21 +26,25 @@ protected:
     bool params_ready() const override;
     void send_banner() override;
 
-    MAV_RESULT _handle_command_preflight_calibration(const mavlink_command_long_t &packet) override;
+    MAV_RESULT _handle_command_preflight_calibration(const mavlink_command_int_t &packet, const mavlink_message_t &msg) override;
 
     void send_attitude_target() override;
     void send_position_target_global_int() override;
     void send_position_target_local_ned() override;
 
     MAV_RESULT handle_command_do_set_roi(const Location &roi_loc) override;
-    MAV_RESULT handle_preflight_reboot(const mavlink_command_long_t &packet) override;
-    MAV_RESULT handle_command_mount(const mavlink_command_long_t &packet) override;
-    MAV_RESULT handle_command_int_packet(const mavlink_command_int_t &packet) override;
-    MAV_RESULT handle_command_long_packet(const mavlink_command_long_t &packet) override;
+    MAV_RESULT handle_preflight_reboot(const mavlink_command_int_t &packet, const mavlink_message_t &msg) override;
+#if HAL_MOUNT_ENABLED
+    MAV_RESULT handle_command_mount(const mavlink_command_int_t &packet, const mavlink_message_t &msg) override;
+#endif
+    MAV_RESULT handle_command_int_packet(const mavlink_command_int_t &packet, const mavlink_message_t &msg) override;
+    MAV_RESULT handle_command_long_packet(const mavlink_command_long_t &packet, const mavlink_message_t &msg) override;
     MAV_RESULT handle_command_int_do_reposition(const mavlink_command_int_t &packet);
     MAV_RESULT handle_command_pause_continue(const mavlink_command_int_t &packet);
 
+#if HAL_MOUNT_ENABLED
     void handle_mount_message(const mavlink_message_t &msg) override;
+#endif
 
     void handle_landing_target(const mavlink_landing_target_t &packet, uint32_t timestamp_ms) override;
 
@@ -47,7 +56,16 @@ protected:
     virtual MAV_VTOL_STATE vtol_state() const override { return MAV_VTOL_STATE_MC; };
     virtual MAV_LANDED_STATE landed_state() const override;
 
+    void handle_manual_control_axes(const mavlink_manual_control_t &packet, const uint32_t tnow) override;
+
 private:
+
+    // sanity check velocity or acceleration vector components are numbers
+    // (e.g. not NaN) and below 1000. vec argument units are in meters/second or
+    // metres/second/second
+    bool sane_vel_or_acc_vector(const Vector3f &vec) const;
+
+    MISSION_STATE mission_state(const class AP_Mission &mission) const override;
 
     void handleMessage(const mavlink_message_t &msg) override;
     void handle_command_ack(const mavlink_message_t &msg) override;
@@ -78,4 +96,22 @@ private:
     uint8_t high_latency_wind_speed() const override;
     uint8_t high_latency_wind_direction() const override;
 #endif // HAL_HIGH_LATENCY2_ENABLED
+
+
+    MAV_RESULT handle_MAV_CMD_DO_CHANGE_SPEED(const mavlink_command_int_t &packet);
+    MAV_RESULT handle_MAV_CMD_DO_MOTOR_TEST(const mavlink_command_int_t &packet);
+    MAV_RESULT handle_MAV_CMD_DO_PARACHUTE(const mavlink_command_int_t &packet);
+
+#if AC_MAVLINK_SOLO_BUTTON_COMMAND_HANDLING_ENABLED
+    MAV_RESULT handle_MAV_CMD_SOLO_BTN_FLY_CLICK(const mavlink_command_int_t &packet);
+    MAV_RESULT handle_MAV_CMD_SOLO_BTN_FLY_HOLD(const mavlink_command_int_t &packet);
+    MAV_RESULT handle_MAV_CMD_SOLO_BTN_PAUSE_CLICK(const mavlink_command_int_t &packet);
+#endif
+
+    MAV_RESULT handle_MAV_CMD_MISSION_START(const mavlink_command_int_t &packet);
+
+#if AP_WINCH_ENABLED
+    MAV_RESULT handle_MAV_CMD_DO_WINCH(const mavlink_command_int_t &packet);
+#endif
+
 };

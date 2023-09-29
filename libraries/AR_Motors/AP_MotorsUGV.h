@@ -1,13 +1,13 @@
 #pragma once
 
 #include <AP_Arming/AP_Arming.h>
-#include <AP_ServoRelayEvents/AP_ServoRelayEvents.h>
 #include <AP_WheelEncoder/AP_WheelRateControl.h>
+#include <SRV_Channel/SRV_Channel.h>
 
 class AP_MotorsUGV {
 public:
     // Constructor
-    AP_MotorsUGV(AP_ServoRelayEvents &relayEvents, AP_WheelRateControl& rate_controller);
+    AP_MotorsUGV(AP_WheelRateControl& rate_controller);
 
     // singleton support
     static AP_MotorsUGV    *get_singleton(void) { return _singleton; }
@@ -106,10 +106,13 @@ public:
     bool pre_arm_check(bool report) const;
 
     // return the motor mask
-    uint16_t get_motor_mask() const { return _motor_mask; }
+    uint32_t get_motor_mask() const { return _motor_mask; }
 
     // returns true if the configured PWM type is digital and should have fixed endpoints
     bool is_digital_pwm_type() const;
+
+    // returns true if the vehicle is omni
+    bool is_omni() const { return _frame_type != FRAME_TYPE_UNDEFINED && _motors_num > 0; }
 
     // structure for holding motor limit flags
     struct AP_MotorsUGV_limit {
@@ -186,7 +189,6 @@ private:
     float get_rate_controlled_throttle(SRV_Channel::Aux_servo_function_t function, float throttle, float dt);
 
     // external references
-    AP_ServoRelayEvents &_relayEvents;
     AP_WheelRateControl &_rate_controller;
 
     static const int8_t AP_MOTORS_NUM_MOTORS_MAX = 4;
@@ -199,6 +201,7 @@ private:
     AP_Int8 _throttle_min; // throttle minimum percentage
     AP_Int8 _throttle_max; // throttle maximum percentage
     AP_Float _thrust_curve_expo; // thrust curve exponent from -1 to +1 with 0 being linear
+    AP_Float _thrust_asymmetry; // asymmetry factor, how much better your skid-steering motors are at going forward than backwards (forward/backward thrust ratio)
     AP_Float _vector_angle_max;  // angle between steering's middle position and maximum position when using vectored thrust.  zero to disable vectored thrust
     AP_Float _speed_scale_base;  // speed above which steering is scaled down when using regular steering/throttle vehicles.  zero to disable speed scaling
     AP_Float _steering_throttle_mix; // Steering vs Throttle priorisation.  Higher numbers prioritise steering, lower numbers prioritise throttle.  Only valid for Skid Steering vehicles
@@ -215,7 +218,7 @@ private:
     float   _mainsail;  // requested mainsail input as a value from 0 to 100
     float   _wingsail;  // requested wing sail input as a value in the range +- 100
     float   _mast_rotation;  // requested mast rotation input as a value in the range +- 100
-    uint16_t _motor_mask;   // mask of motors configured with pwm_type
+    uint32_t _motor_mask;   // mask of motors configured with pwm_type
     frame_type _frame_type; // frame type requested at initialisation
 
     // omni variables

@@ -50,6 +50,8 @@
 #include <AC_PID/AC_PID_2D.h>
 #include <AC_PID/AC_PID_Basic.h>
 #include <AC_PID/AC_PID.h>
+#include <AP_Vehicle/AP_MultiCopter.h>
+
 #include <Filter/NotchFilter.h>
 
 // Configuration
@@ -57,6 +59,7 @@
 #include "config.h"
 
 #include "Fins.h"
+#include "Loiter.h"
 
 #include "RC_Channel.h"         // RC Channel Library
 
@@ -89,15 +92,17 @@ public:
     friend class ModeLand;
     friend class ModeVelocity;
     friend class ModeLoiter;
+    friend class ModeRTL;
 
     friend class Fins;
+    friend class Loiter;
 
     Blimp(void);
 
 private:
 
     // key aircraft parameters passed to multiple libraries
-    AP_Vehicle::MultiCopter aparm;
+    AP_MultiCopter aparm;
 
     // Global parameters are all contained within the 'g' class.
     Parameters g;
@@ -106,7 +111,7 @@ private:
     // primary input control channels
     RC_Channel *channel_right;
     RC_Channel *channel_front;
-    RC_Channel *channel_down;
+    RC_Channel *channel_up;
     RC_Channel *channel_yaw;
 
     AP_Logger logger;
@@ -187,14 +192,9 @@ private:
         return failsafe.radio || battery.has_failsafed() || failsafe.gcs || failsafe.ekf;
     }
 
-    // sensor health for logging
-    struct {
-        uint8_t baro        : 1;    // true if baro is healthy
-        uint8_t compass     : 1;    // true if compass is healthy
-    } sensor_health;
-
     // Motor Output
     Fins *motors;
+    Loiter *loiter;
 
     int32_t _home_bearing;
     uint32_t _home_distance;
@@ -209,7 +209,6 @@ private:
 
     // Altitude
     int32_t baro_alt;            // barometer altitude in cm above home
-    LowPassFilterVector3f land_accel_ef_filter; // accelerations for land and crash detector tests
 
     // filtered pilot's throttle input used to cancel landing if throttle held high
     LowPassFilterFloat rc_throttle_control_in_filter;
@@ -231,13 +230,13 @@ private:
     AP_InertialNav inertial_nav;
 
     // Vel & pos PIDs
-    AC_PID_2D pid_vel_xy{3, 0.2, 0, 0, 0.2, 3, 3, 0.02}; //These are the defaults - P I D FF IMAX FiltHz FiltDHz DT
-    AC_PID_Basic pid_vel_z{7, 1.5, 0, 0, 1, 3, 3, 0.02};
-    AC_PID_Basic pid_vel_yaw{3, 0.4, 0, 0, 0.2, 3, 3, 0.02};
+    AC_PID_2D pid_vel_xy{3, 0.2, 0, 0, 0.2, 3, 3}; //These are the defaults - P I D FF IMAX FiltHz FiltDHz DT
+    AC_PID_Basic pid_vel_z{7, 1.5, 0, 0, 1, 3, 3};
+    AC_PID_Basic pid_vel_yaw{3, 0.4, 0, 0, 0.2, 3, 3};
 
-    AC_PID_2D pid_pos_xy{1, 0.05, 0, 0, 0.1, 3, 3, 0.02};
-    AC_PID_Basic pid_pos_z{0.7, 0, 0, 0, 0, 3, 3, 0.02};
-    AC_PID pid_pos_yaw{1.2, 0.5, 0, 0, 2, 3, 3, 3, 0.02}; //p, i, d, ff, imax, filt_t, filt_e, filt_d, dt, opt srmax, opt srtau
+    AC_PID_2D pid_pos_xy{1, 0.05, 0, 0, 0.1, 3, 3};
+    AC_PID_Basic pid_pos_z{0.7, 0, 0, 0, 0, 3, 3};
+    AC_PID pid_pos_yaw{1.2, 0.5, 0, 0, 2, 3, 3, 3}; //p, i, d, ff, imax, filt_t, filt_e, filt_d, dt, opt srmax, opt srtau
 
     // System Timers
     // --------------
@@ -298,7 +297,6 @@ private:
     void get_scheduler_tasks(const AP_Scheduler::Task *&tasks,
                              uint8_t &task_count,
                              uint32_t &log_bit) override;
-    void fast_loop() override;
     void rc_loop();
     void throttle_loop();
     void update_batt_compass(void);
@@ -365,10 +363,9 @@ private:
     void Log_Write_Data(LogDataID id, uint16_t value);
     void Log_Write_Data(LogDataID id, float value);
     void Log_Write_Parameter_Tuning(uint8_t param, float tuning_val, float tune_min, float tune_max);
-    void Log_Sensor_Health();
     void Log_Write_GuidedTarget(uint8_t target_type, const Vector3f& pos_target, const Vector3f& vel_target);
-    void Log_Write_SysID_Setup(uint8_t systemID_axis, float waveform_magnitude, float frequency_start, float frequency_stop, float time_fade_in, float time_const_freq, float time_record, float time_fade_out);
-    void Log_Write_SysID_Data(float waveform_time, float waveform_sample, float waveform_freq, float angle_x, float angle_y, float angle_z, float accel_x, float accel_y, float accel_z);
+
+
     void Log_Write_Vehicle_Startup_Messages();
     void log_init(void);
     void Write_FINI(float right, float front, float down, float yaw);
@@ -385,7 +382,7 @@ private:
     void notify_flight_mode();
 
     // mode_land.cpp
-    void set_mode_land_with_pause(ModeReason reason);
+    void set_mode_land_failsafe(ModeReason reason);
     bool landing_with_GPS();
 
     // // motors.cpp
@@ -437,6 +434,7 @@ private:
     ModeLand mode_land;
     ModeVelocity mode_velocity;
     ModeLoiter mode_loiter;
+    ModeRTL mode_rtl;
 
     // mode.cpp
     Mode *mode_from_mode_num(const Mode::Number mode);
