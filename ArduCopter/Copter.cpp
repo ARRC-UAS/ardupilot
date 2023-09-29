@@ -233,12 +233,13 @@ const AP_Scheduler::Task Copter::scheduler_tasks[] = {
 #if WINCH_ENABLED == ENABLED
     SCHED_TASK_CLASS(AP_Winch,             &copter.g2.winch,            update,          50,  50, 150),
 #endif
-#ifdef USERHOOK_FASTLOOP
-    SCHED_TASK(userhook_FastLoop,    100,     75, 153),
+#ifdef USER_GIMBAL_LOOP
+    SCHED_TASK(user_ARRC_gimbal,    10,     100, 153),
 #endif
-#ifdef USERHOOK_50HZLOOP
-    SCHED_TASK(userhook_50Hz,         50,     75, 156),
-#endif
+// #ifdef USER_LB680A_LOOP
+//     SCHED_TASK(user_ARRC_LB680A_logger,         50,     75, 156),
+// #endif
+    SCHED_TASK_CLASS(AC_ARRC_LB680A,             &copter.ARRC_LB680A,        find_RPi,          1,  75, 156),
 #ifdef USERHOOK_MEDIUMLOOP
     SCHED_TASK(userhook_MediumLoop,   10,     75, 159),
 #endif
